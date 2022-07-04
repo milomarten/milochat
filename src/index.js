@@ -16,7 +16,8 @@ root.render(
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<App />} />
-        <Route path="chat" element={<Chat channel="milo_marten"/>} />
+        <Route path="chat" element={<Chat channel="milo_marten" ffz="true"/>} />
+        <Route path="dchat" element={<Chat/>} />
       </Routes>
     </BrowserRouter>
 );
