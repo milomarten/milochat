@@ -161,8 +161,6 @@ function Message(props) {
         }
     }
 
-    // console.log(tokens);
-
     // Secondary parsing - Distinguishing between regular text and FFZ emotes
     let emotesFromOther = props.emotes;
     if (Object.keys(emotesFromOther).length) {
