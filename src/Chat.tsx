@@ -194,97 +194,15 @@ function htmlifyMessage(raw: string, twitchEmoteTags: any, otherEmotes: EmoteBan
     }
 
     for (let emote in otherEmotes) {
-        let regex = new RegExp("\b" + emote + "\b", "g");
-        // todo: replace all with <img>
+        console.log("Searching " + html + " for " + emote);
+        let urls = otherEmotes[emote];
+        let regex = new RegExp("\\b" + emote + "\\b", "g");
+        let tag = '<img class="emote other" src="' + urls[0] + '" alt="' + emote + '">';
+        html = html.replaceAll(regex, tag);
     }
-
-    console.log(html);
 
     return html;
 }
-
-// function Message(props) {
-//     let message = props.output;
-//     let tokens = [];
-
-//     // Initial parsing - Distinguish between twitch emotes and regular text
-//     let emotesFromTwitch = parseTwitchEmoteObj(props.tags.emotes);
-//     let idx = 0;
-
-//     while (idx < message.length) {
-//         if (emotesFromTwitch[idx]) {
-//             let emote = emotesFromTwitch[idx];
-//             tokens.push({
-//                 type: "emote",
-//                 url: emote.url
-//             });
-//             idx = emote.end + 1;
-//         } else {
-//             let char = message[idx];
-//             if (tokens.length === 0 || tokens[tokens.length - 1].type === "emote") {
-//                 tokens.push({
-//                     type: "text",
-//                     value: ""
-//                 });
-//             }
-//             tokens[tokens.length - 1].value += char;
-//             idx++;
-//         }
-//     }
-
-//     // Secondary parsing - Distinguishing between regular text and FFZ emotes
-//     let emotesFromOther = props.emotes;
-//     if (Object.keys(emotesFromOther).length) {
-//         let tokens2 = [];
-
-//         for (let t of tokens) {
-//             if (t.type === "emote") {
-//                 tokens2.push(t);
-//             } else {
-//                 let words = t.value.split(" ");
-//                 for (let word of words) {
-//                     if (emotesFromOther[word]) {
-//                         // On a text -> emote border, re-add our missing space
-//                         if (tokens2.length && tokens2[tokens2.length - 1].type === "text") {
-//                             tokens2[tokens2.length - 1].raw.push("");
-//                         }
-//                         tokens2.push({
-//                             type: "emote",
-//                             url: emotesFromOther[word] 
-//                         });
-//                     } else {
-//                         if (tokens2.length === 0 || tokens2[tokens2.length - 1].type === "emote") {
-//                             tokens2.push({
-//                                 type: "text",
-//                                 raw: tokens2.length === 0 ? [] : [""], // On an emote -> text border, re-add our missing space
-//                                 get value() {
-//                                     return this.raw.join(" ");
-//                                 }
-//                             });
-//                         }
-//                         tokens2[tokens2.length - 1].raw.push(word);
-//                     }
-//                 }
-//             }
-//         }
-
-//         tokens = tokens2;
-//     }
-
-//     return (
-//         <span className="chat-row">
-//             { 
-//                 tokens.map(function(token, idx) {
-//                     if (token.type == "emote") {
-//                         return <img className="emote" src={token.url} />
-//                     } else {
-//                         return <>{token.value}</>
-//                     }
-//                 })
-//             }
-//         </span>
-//     )
-// }
 
 function parseTwitchEmoteObj(raw: any): TwitchMap {
     let map: TwitchMap = {};
