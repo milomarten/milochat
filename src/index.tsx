@@ -19,7 +19,6 @@ root.render(
       <Routes>
         <Route path="/" element={<App />} />
         <Route path="/chat" element={<Chat options={options}/>} />
-        <Route path="/dchat" element={<Chat/>} />
       </Routes>
     </BrowserRouter>
 );
