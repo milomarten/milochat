@@ -6,16 +6,20 @@ import {
   Route,
 } from "react-router-dom";
 import App from './App';
-import Chat from './Chat';
+import Chat, { MilochatOptions } from './Chat';
 import reportWebVitals from './reportWebVitals';
+
+let options: MilochatOptions = {
+  ffz: true
+}
 
 const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
 root.render(
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<App />} />
-        <Route path="chat" element={<Chat channel="milo_marten" ffz="true"/>} />
-        <Route path="dchat" element={<Chat/>} />
+        <Route path="/chat" element={<Chat options={options}/>} />
+        <Route path="/dchat" element={<Chat/>} />
       </Routes>
     </BrowserRouter>
 );

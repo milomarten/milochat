@@ -3,8 +3,9 @@ import { createDummyClient } from "./Dummy";
 import { Client, realChat } from "./Client";
 
 import "./Chat.css"
+import { useSearchParams } from "react-router-dom";
 
-interface MilochatOptions {
+export interface MilochatOptions {
     ffz?: boolean
     emotes?: EmoteBank
 }
@@ -60,15 +61,16 @@ function parseFFZResponse(data: any) : EmoteBank {
             }
         }
     }
-    console.log(emote_lookup);
     return emote_lookup;
 }
 
 function Chat(props: any) {
-    let channel = props.channel as string;
-    let options: MilochatOptions = {
-        ffz: true
-    }
+    let [params, setParams] = useSearchParams();
+    let channel = params.get("channel");
+
+    console.log("Listening to channel " + channel);
+
+    let options = props.options as MilochatOptions;
 
     let [ffz, setFfz] = useState(new AsyncLoad<EmoteBank>());
     let [globalFfz, setGlobalFfz] = useState(new AsyncLoad<EmoteBank>());
@@ -76,7 +78,7 @@ function Chat(props: any) {
     useEffect(() => {
         if (channel && options.ffz) {
             console.log("Fetching channel emotes from FFZ...");
-            fetch("https://api.frankerfacez.com/v1/room/" + props.channel)
+            fetch("https://api.frankerfacez.com/v1/room/" + channel)
                 .then(response => response.json())
                 .then(data => {
                     let emote_lookup = parseFFZResponse(data);
@@ -90,7 +92,7 @@ function Chat(props: any) {
         } else {
             setFfz(ffz.complete({}));
         }
-    }, [props.ffz, props.channel]);
+    }, []);
 
     useEffect(() => {
         if (options.ffz) {
@@ -109,7 +111,7 @@ function Chat(props: any) {
         } else {
             setGlobalFfz(ffz.complete({}));
         }
-    }, [props.ffz]);
+    }, []);
 
     if (ffz.loaded && globalFfz.loaded) {
         let bank: EmoteBank = {
@@ -118,7 +120,7 @@ function Chat(props: any) {
             ...globalFfz.getData({})
         }
         return (
-            <ChatBox channel={props.channel} emotes={bank} options={options}/>
+            <ChatBox channel={channel} emotes={bank} options={options}/>
         )
     } else {
         return (
@@ -141,7 +143,6 @@ function ChatBox(props: any) {
         }
 
         chat.onMessage((_channel: string, tags: any, message: string) => {
-            console.log(tags);
             setLog([...log, { 
                 tags, 
                 raw: message, 
@@ -194,7 +195,6 @@ function htmlifyMessage(raw: string, twitchEmoteTags: any, otherEmotes: EmoteBan
     }
 
     for (let emote in otherEmotes) {
-        console.log("Searching " + html + " for " + emote);
         let urls = otherEmotes[emote];
         let regex = new RegExp("\\b" + emote + "\\b", "g");
         let tag = '<img class="emote other" src="' + urls[0] + '" alt="' + emote + '">';
