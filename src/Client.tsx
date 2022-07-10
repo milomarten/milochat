@@ -1,8 +1,6 @@
 import tmi from 'tmi.js';
 
-export interface MessageListener {
-    apply(channel: string, tags: any, message: string)
-}
+export type MessageListener = (channel: string, tags: any, message: string) => void;
 
 export interface Client {
     start(): void,
@@ -21,8 +19,8 @@ export function realChat(channel: string): Client {
             client.connect().catch(console.error);
         },
         onMessage: function(f: MessageListener) {
-            client.on('message', function(channel, tags, message) {
-                f.apply(channel, tags, message)
+            client.on('message', function(channel: string, tags: any, message: string) {
+                f(channel, tags, message)
             });
         },
         end: function() {

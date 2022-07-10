@@ -4,6 +4,11 @@ import { Client, realChat } from "./Client";
 
 import "./Chat.css"
 
+interface MilochatOptions {
+    ffz?: boolean
+    emotes?: EmoteBank
+}
+
 class AsyncLoad<T> {
     data?: T;
 
@@ -24,32 +29,52 @@ class AsyncLoad<T> {
     }
 }
 
-type EmoteBank = { [key: string]: string[] };
-
 class ChatMessage {
     tags: any;
     raw: string;
     message: string;
+
+    constructor(tags: any, raw: string, message: string) {
+        this.tags = tags;
+        this.raw = raw;
+        this.message = message;
+    }
 }
 
-function parseFFZResponse(data) : EmoteBank {
+type EmoteBank = { [key: string]: string[] };
+
+type TwitchMap = {[key: number]: {url: string, end: number}};
+
+function parseFFZResponse(data: any) : EmoteBank {
     let sets = data.sets;
     let emote_lookup: EmoteBank = {};
     for (let set_key in sets) {
         for (let emote of sets[set_key].emoticons) {
-            let url = emote.urls["4"] || emote.urls["2"] || emote.urls["1"];
-            emote_lookup[emote.name] = ["https:" + url];
+            let urls = [];
+            if (emote.urls["1"]) { urls.push("https:" + emote.urls["1"]); }
+            if (emote.urls["2"]) { urls.push("https:" + emote.urls["2"]); }
+            if (emote.urls["4"]) { urls.push("https:" + emote.urls["4"]); }
+
+            if (urls.length) {
+                emote_lookup[emote.name] = urls;
+            }
         }
     }
+    console.log(emote_lookup);
     return emote_lookup;
 }
 
-function Chat(props) {
+function Chat(props: any) {
+    let channel = props.channel as string;
+    let options: MilochatOptions = {
+        ffz: true
+    }
+
     let [ffz, setFfz] = useState(new AsyncLoad<EmoteBank>());
     let [globalFfz, setGlobalFfz] = useState(new AsyncLoad<EmoteBank>());
     
     useEffect(() => {
-        if (props.ffz && props.channel) {
+        if (channel && options.ffz) {
             console.log("Fetching channel emotes from FFZ...");
             fetch("https://api.frankerfacez.com/v1/room/" + props.channel)
                 .then(response => response.json())
@@ -68,7 +93,7 @@ function Chat(props) {
     }, [props.ffz, props.channel]);
 
     useEffect(() => {
-        if (props.ffz) {
+        if (options.ffz) {
             console.log("Fetching global emotes from FFZ...");
             fetch("https://api.frankerfacez.com/v1/set/global")
                 .then(response => response.json())
@@ -88,11 +113,12 @@ function Chat(props) {
 
     if (ffz.loaded && globalFfz.loaded) {
         let bank: EmoteBank = {
+            ...(options.emotes || {}),
             ...ffz.getData({}),
             ...globalFfz.getData({})
         }
         return (
-            <ChatBox channel={props.channel} emotes={bank} />
+            <ChatBox channel={props.channel} emotes={bank} options={options}/>
         )
     } else {
         return (
@@ -101,7 +127,8 @@ function Chat(props) {
     }
 }
 
-function ChatBox(props) {
+function ChatBox(props: any) {
+    let options = props.options as MilochatOptions;
     let emote_bank = props.emotes as EmoteBank;
     let [log, setLog] = useState(new Array<ChatMessage>());
 
@@ -114,10 +141,11 @@ function ChatBox(props) {
         }
 
         chat.onMessage((_channel: string, tags: any, message: string) => {
+            console.log(tags);
             setLog([...log, { 
                 tags, 
                 raw: message, 
-                message: htmlifyMessage(message, tags.emote, emote_bank) }]);
+                message: htmlifyMessage(message, tags.emotes, emote_bank) }]);
         });
 
         chat.start();
@@ -131,6 +159,7 @@ function ChatBox(props) {
             log.map(function(row) {
                 return <div key={row.tags.id}>
                     <span className="name">{row.tags["display-name"]}: </span>
+                    <span dangerouslySetInnerHTML={{__html: row.message}}></span>
                 </div>
             })
         }
@@ -147,12 +176,18 @@ function htmlifyMessage(raw: string, twitchEmoteTags: any, otherEmotes: EmoteBan
         if (emotesFromTwitch[idx]) {
             let emote = emotesFromTwitch[idx];
             let emoteName = raw.substring(idx, emote.end + 1);
-            // todo: <img>
-            html += "[[EMOTE " + emoteName + "]]";
+
+            let base_url = "https://static-cdn.jtvnw.net/emoticons/v2/emotesv2_a84b58c73f3e446a9e12c96cc6cd0ea3/default/dark";
+            let tag = '<img class="emote twitch" src="' + base_url + '/1.0" srcset="' + base_url + '/2.0 2x,' + base_url + '/3.0 4x" alt="' + emoteName + '">';
+            html += tag;
             idx = emote.end + 1;
         } else {
             let char = raw[idx];
-            // todo: Cleanse
+            if (char === "<") {
+                char = "&lt;";
+            } else if (char === ">") {
+                char = "&gt;";
+            }
             html += char;
             idx++;
         }
@@ -162,6 +197,8 @@ function htmlifyMessage(raw: string, twitchEmoteTags: any, otherEmotes: EmoteBan
         let regex = new RegExp("\b" + emote + "\b", "g");
         // todo: replace all with <img>
     }
+
+    console.log(html);
 
     return html;
 }
@@ -248,8 +285,6 @@ function htmlifyMessage(raw: string, twitchEmoteTags: any, otherEmotes: EmoteBan
 //         </span>
 //     )
 // }
-
-type TwitchMap = {[key: number]: {url: string, end: number}};
 
 function parseTwitchEmoteObj(raw: any): TwitchMap {
     let map: TwitchMap = {};
