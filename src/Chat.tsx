@@ -58,6 +58,7 @@ class ChatMessage {
     get color(): string { return this.tags.color; }
     get mod(): boolean { return this.tags.mod; }
     get sub(): boolean { return this.tags.subscriber; }
+    get timestamp(): number { return parseInt(this.tags['tmi-sent-ts']); }
 }
 
 function Chat(props: any) {
