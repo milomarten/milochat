@@ -38,13 +38,25 @@ const ONLY_IMG_TAG =/^<img.*?>$/;
 class ChatMessage {
     tags: any;
     message: string;
-    
+    id: string;
+    name: string;
+    color: string;
+    mod: boolean;
+    sub: boolean;
+    timestamp: number;
     emoteOnly: boolean;
     isOneEmoteOnly: boolean;
 
     constructor(tags: any, message: string) {
         this.tags = tags;
         this.message = message;
+
+        this.id = tags.id;
+        this.name = tags['display-name'];
+        this.color = tags.color;
+        this.mod = tags.mod;
+        this.sub = tags.subscriber;
+        this.timestamp = parseInt(tags['tmi-sent-ts']);
         this.emoteOnly = ChatMessage.isEmoteOnly(message);
         this.isOneEmoteOnly = this.emoteOnly && ChatMessage.isOneEmoteOnly(message);
     }
@@ -56,13 +68,6 @@ class ChatMessage {
     private static isOneEmoteOnly(msg: string): boolean {
         return ONLY_IMG_TAG.test(msg);
     }
-
-    get id(): string { return this.tags.id; }
-    get name(): string { return this.tags['display-name']; }
-    get color(): string { return this.tags.color; }
-    get mod(): boolean { return this.tags.mod; }
-    get sub(): boolean { return this.tags.subscriber; }
-    get timestamp(): number { return parseInt(this.tags['tmi-sent-ts']); }
 }
 
 function Chat(props: any) {
@@ -132,21 +137,21 @@ function ChatBox(props: any) {
     return (
         <>
         {
-            <Template template={template || DEFAULT_TEMPLATE} data={{options, messages: log}} />
+            log.map(line => {
+                return (
+                    <div className="row" key={line.id}>
+                        <Template template={template || DEFAULT_TEMPLATE} data={line} />
+                    </div>
+                )
+            })
         }
         </>
     )
 }
 
 const DEFAULT_TEMPLATE = `
-    <div class="box">
-        {{#messages}}
-        <div class="row">
-            <span class="name">{{name}}: </span>
-            <span class="message">{{message}}</span>
-        </div>
-        {{/messages}}
-    </div>
+    <span class="name">{{name}}: </span>
+    <span class="message">{{message}}</span>
 `;
 
 function htmlifyMessage(raw: string, twitchEmoteTags: any, otherEmotes: EmoteBank): string {
