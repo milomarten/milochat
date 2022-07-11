@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
-import { createDummyClient } from "./Dummy";
-import { Client, realChat } from "./Client";
+import { createDummyClient } from "../src/Dummy";
+import { Client, realChat } from "../src/Client";
 
-import "./Chat.css"
-import { useSearchParams } from "react-router-dom";
-import { EmoteBank, getAllFFZ } from "./Emotes";
-import { Template } from "./Template";
+import { EmoteBank, getAllFFZ } from "../src/Emotes";
+import { Template } from "../src/Template";
+import { useRouter } from "next/router";
+import React from "react";
 
 export interface MilochatOptions {
     ffz?: boolean
@@ -66,25 +66,30 @@ class ChatMessage {
 }
 
 function Chat(props: any) {
-    let [params] = useSearchParams();
-    let channel = params.get("channel");
+    const router = useRouter();
 
-    console.log("Listening to channel " + channel);
-
-    let options = props.options as MilochatOptions;
+    let options = (props.options || {}) as MilochatOptions;
 
     let [ffz, setFfz] = useState(new AsyncLoad<EmoteBank>());
+    let [channel, setChannel] = useState<string>();
     
     useEffect(() => {
-        if (options.ffz) {
-            getAllFFZ(channel)
-                .then(bank => setFfz(f => f.complete(bank)));
-        } else {
-            setFfz(f => f.complete({}));
-        }
-    }, [channel, options.ffz]);
+        if (router.isReady) {
+            const c = (router.query.channel as string) || "";
 
-    if (ffz.loaded) {
+            console.log("Listening to channel " + c);
+            setChannel(c);
+
+            if (c && options.ffz) {
+                getAllFFZ(c)
+                    .then(bank => setFfz(f => f.complete(bank)));
+            } else {
+                setFfz(f => f.complete({}));
+            }
+        }
+    }, [router.isReady, options.ffz]);
+
+    if (ffz.loaded && channel !== undefined) {
         let bank: EmoteBank = {
             ...(options.emotes || {}),
             ...ffz.getData({})
@@ -106,6 +111,7 @@ function ChatBox(props: any) {
     let [log, setLog] = useState(new Array<ChatMessage>());
 
     useEffect(() => {
+        console.log("Setting up client");
         let chat: Client;
         if (props.channel) {
             chat = realChat(props.channel);
@@ -133,10 +139,12 @@ function ChatBox(props: any) {
 }
 
 const DEFAULT_TEMPLATE = `
-    <div>
+    <div class="box">
         {{#messages}}
-        <span class="name">{{name}}: </span>
-        <span class="message">{{message}}</span>
+        <div class="row">
+            <span class="name">{{name}}: </span>
+            <span class="message">{{message}}</span>
+        </div>
         {{/messages}}
     </div>
 `;
