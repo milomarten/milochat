@@ -5,6 +5,7 @@ import { Client, realChat } from "./Client";
 import "./Chat.css"
 import { useSearchParams } from "react-router-dom";
 import { EmoteBank, getAllFFZ } from "./Emotes";
+import { Template } from "./Template";
 
 export interface MilochatOptions {
     ffz?: boolean
@@ -32,6 +33,8 @@ class AsyncLoad<T> {
 }
 
 const IMG_TAG = /<img.*?>/g;
+const ONLY_IMG_TAG =/^<img.*?>$/;
+
 class ChatMessage {
     tags: any;
     message: string;
@@ -51,9 +54,10 @@ class ChatMessage {
     }
 
     private static isOneEmoteOnly(msg: string): boolean {
-        return msg.match(IMG_TAG)?.length === 1;
+        return ONLY_IMG_TAG.test(msg);
     }
 
+    get id(): string { return this.tags.id; }
     get name(): string { return this.tags['display-name']; }
     get color(): string { return this.tags.color; }
     get mod(): boolean { return this.tags.mod; }
@@ -62,7 +66,7 @@ class ChatMessage {
 }
 
 function Chat(props: any) {
-    let [params, setParams] = useSearchParams();
+    let [params] = useSearchParams();
     let channel = params.get("channel");
 
     console.log("Listening to channel " + channel);
@@ -74,11 +78,11 @@ function Chat(props: any) {
     useEffect(() => {
         if (options.ffz) {
             getAllFFZ(channel)
-                .then(bank => setFfz(ffz.complete(bank)));
+                .then(bank => setFfz(f => f.complete(bank)));
         } else {
-            setFfz(ffz.complete({}));
+            setFfz(f => f.complete({}));
         }
-    }, []);
+    }, [channel, options.ffz]);
 
     if (ffz.loaded) {
         let bank: EmoteBank = {
@@ -96,6 +100,7 @@ function Chat(props: any) {
 }
 
 function ChatBox(props: any) {
+    let template = props.template as string;
     let options = props.options as MilochatOptions;
     let emote_bank = props.emotes as EmoteBank;
     let [log, setLog] = useState(new Array<ChatMessage>());
@@ -110,28 +115,31 @@ function ChatBox(props: any) {
 
         chat.onMessage((_channel: string, tags: any, message: string) => {
             let nextLine = new ChatMessage(tags, htmlifyMessage(message, tags.emotes, emote_bank));
-            console.log(nextLine);
             setLog(l => [...l, nextLine]);
         });
 
         chat.start();
 
         return () => chat.end();
-    }, [props.channel]);
+    }, [props.channel, emote_bank]);
     
     return (
         <>
         {
-            log.map(function(row) {
-                return <div key={row.tags.id}>
-                    <span className="name">{row.tags["display-name"]}: </span>
-                    <span dangerouslySetInnerHTML={{__html: row.message}}></span>
-                </div>
-            })
+            <Template template={template || DEFAULT_TEMPLATE} data={{options, messages: log}} />
         }
         </>
     )
 }
+
+const DEFAULT_TEMPLATE = `
+    <div>
+        {{#messages}}
+        <span class="name">{{name}}: </span>
+        <span class="message">{{message}}</span>
+        {{/messages}}
+    </div>
+`;
 
 function htmlifyMessage(raw: string, twitchEmoteTags: any, otherEmotes: EmoteBank): string {
     let html = "";
@@ -160,7 +168,7 @@ function htmlifyMessage(raw: string, twitchEmoteTags: any, otherEmotes: EmoteBan
     }
 
     for (let emote in otherEmotes) {
-        let [prime, ...alts] = otherEmotes[emote];
+        let [prime] = otherEmotes[emote];
         let regex = new RegExp("\\b" + emote + "\\b", "g");
         let tag = `<img class="emote other" src="${prime}" alt="${emote}">`;
         html = html.replaceAll(regex, tag);
