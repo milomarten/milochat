@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
-import { createDummyClient } from "../src/Dummy";
-import { Client, realChat } from "../src/Client";
+import { useEffect, useMemo, useState } from "react";
+import { ChatMessage, Client, realChat } from "../src/Client";
 
 import { EmoteBank, getAllFFZ } from "../src/Emotes";
 import { Template } from "../src/Template";
@@ -10,8 +9,12 @@ import Handlebars from "handlebars";
 import React from "react";
 
 export interface MilochatOptions {
+    /// Toggles whether FFZ emotes are supported
     ffz?: boolean
-    emotes?: EmoteBank
+    /// An optional list of users to not display in chat
+    blacklist?: string[],
+    /// If true, any pings are wrapped in a span tag with class "ping"
+    formatAt?: boolean
 }
 
 interface Preload {
@@ -38,43 +41,6 @@ class AsyncLoad<T> {
     }
 }
 
-class ChatMessage {
-    tags: any;
-    message: string;
-    id: string;
-    name: string;
-    color: string;
-    mod: boolean;
-    sub: boolean;
-    timestamp: number;
-    emoteOnly: boolean;
-    isOneEmoteOnly: boolean;
-
-    constructor(tags: any, message: string) {
-        this.tags = tags;
-        this.message = message;
-
-        this.id = tags.id;
-        this.name = tags['display-name'];
-        this.color = tags.color;
-        this.mod = tags.mod;
-        this.sub = tags.subscriber;
-        this.timestamp = parseInt(tags['tmi-sent-ts']);
-        this.emoteOnly = ChatMessage.isEmoteOnly(message);
-        this.isOneEmoteOnly = this.emoteOnly && ChatMessage.isOneEmoteOnly(message);
-    }
-
-    private static isEmoteOnly(msg: string): boolean {
-        const IMG_TAG = /<img.*?>/g;
-        return msg.replaceAll(IMG_TAG, "").trim().length === 0;
-    }
-
-    private static isOneEmoteOnly(msg: string): boolean {
-        const ONLY_IMG_TAG =/^<img.*?>$/;
-        return ONLY_IMG_TAG.test(msg);
-    }
-}
-
 const DEFAULT_TEMPLATE = `
     <span class="time">{{date timestamp "H:mm"}}</span>
     <span class="name" style="color:{{color}};">{{name}}: </span>
@@ -82,14 +48,15 @@ const DEFAULT_TEMPLATE = `
 `;
 
 const DEFAULT_OPTIONS: MilochatOptions = {
-    ffz: true
+    ffz: true,
+    formatAt: true
 };
 
 const DEFAULT_HANDLEBAR_OPTS: CompileOptions = {
     noEscape: true
 }
 
-function Chat(props: any) {
+function Chat() {
     const router = useRouter();
 
     let options = DEFAULT_OPTIONS;
@@ -115,10 +82,7 @@ function Chat(props: any) {
 
     if (ffz.loaded && channel !== undefined) {
         let preload: Preload = {
-            emotes: {
-                ...(options.emotes || {}),
-                ...ffz.getData({})
-            }
+            emotes: ffz.getData({})
         }
         return (
             <ChatBox channel={channel} preload={preload} options={options}/>
@@ -133,19 +97,22 @@ function Chat(props: any) {
 function ChatBox(props: any) {
     let template = props.template as string;
     let preload = props.preload as Preload;
+    let options = props.options as MilochatOptions;
     let [log, setLog] = useState(new Array<ChatMessage>());
 
     useEffect(() => {
-        let chat: Client;
-        if (props.channel) {
-            chat = realChat(props.channel);
-        } else {
-            chat = createDummyClient();
-        }
+        let chat = realChat(props.channel);
 
-        chat.onMessage((_channel: string, tags: any, message: string) => {
-            let nextLine = new ChatMessage(tags, htmlifyMessage(message, tags, preload));
-            setLog(l => [...l, nextLine]);
+        chat.onMessage((message: ChatMessage) => {
+            if (!options.blacklist || options.blacklist.find(black => black.localeCompare(message.name, 'en')) !== undefined) {
+                message.message = htmlifyMessage(message.message, message.tags, preload, options);
+                console.log(message);
+                setLog(l => [...l, message]);
+            }
+        });
+
+        chat.onClearChat(() => {
+            setLog([]);
         });
 
         chat.start();
@@ -153,7 +120,7 @@ function ChatBox(props: any) {
         return () => chat.end();
     }, [props.channel, preload.emotes]);
     
-    let templateFunc = Handlebars.compile(template || DEFAULT_TEMPLATE, DEFAULT_HANDLEBAR_OPTS);
+    let templateFunc = useMemo(() => Handlebars.compile(template || DEFAULT_TEMPLATE, DEFAULT_HANDLEBAR_OPTS), [template]);
 
     return (
         <>
@@ -170,7 +137,7 @@ function ChatBox(props: any) {
     )
 }
 
-function htmlifyMessage(raw: string, tags: any, preload: Preload): string {
+function htmlifyMessage(raw: string, tags: any, preload: Preload, options: MilochatOptions): string {
     let html = "";
     let emotesFromTwitch = parseTwitchEmoteObj(tags.emotes);
     let idx = 0;
@@ -201,6 +168,11 @@ function htmlifyMessage(raw: string, tags: any, preload: Preload): string {
         let regex = new RegExp("\\b" + emote + "\\b", "g");
         let tag = `<img class="emote other" src="${prime}" alt="${emote}">`;
         html = html.replaceAll(regex, tag);
+    }
+
+    if (options.formatAt) {
+        const AT_REGEX = /(@\S+)/g;
+        html = html.replaceAll(AT_REGEX, '<span class="ping">$1</span>');
     }
 
     return html;
