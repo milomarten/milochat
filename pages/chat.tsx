@@ -11,10 +11,64 @@ import React from "react";
 export interface MilochatOptions {
     /// Toggles whether FFZ emotes are supported
     ffz?: boolean
-    /// An optional list of users to not display in chat
-    blacklist?: string[],
-    /// If true, any pings are wrapped in a span tag with class "ping"
-    formatAt?: boolean
+    blacklist?: {
+        /// If a message is from this user, do not display
+        users?: (string | RegExp)[]
+        /// If a message includes any of these words, do not display
+        includes?: string[]
+        /// If a message starts with any of these words, do not display
+        prefixes?: string[]
+        /// If a message matches any of these regexes, do not display
+        matches?: RegExp[]
+    },
+    tag?: {
+        /// Wrap anything that matches this regex with a span tag with the following class
+        matches?: {regex: string | RegExp, attribute: string, value: string}[],
+        /// If true, any pings are wrapped in a span tag with class "ping"
+        at?: boolean
+    }
+}
+
+function isBlacklistUser(opts: MilochatOptions, user: string): boolean {
+    if (opts.blacklist?.users) {
+        for (let test of opts.blacklist.users) {
+            if (typeof test === "string" && user.toUpperCase() === test.toUpperCase()) {
+                return true;
+            } else if (user.match(test)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+function isBlacklistMessage(opts: MilochatOptions, message: string): boolean {
+    if (opts.blacklist?.prefixes) {
+        for (let prefix of opts.blacklist.prefixes) {
+            if (message.toUpperCase().startsWith(prefix.toUpperCase())) {
+                return true;
+            }
+        }
+    }
+
+    if (opts.blacklist?.includes) {
+        for (let word of opts.blacklist.includes) {
+            let regex = RegExp(`\\b${word}\\b`, 'gi');
+            if (regex.test(word)) {
+                return true;
+            }
+        }
+    }
+
+    if (opts.blacklist?.matches) {
+        for (let regex of opts.blacklist.matches) {
+            if (regex.test(message)) {
+                return true;
+            }
+        }
+    }
+
+    return false;
 }
 
 interface Preload {
@@ -49,7 +103,16 @@ const DEFAULT_TEMPLATE = `
 
 const DEFAULT_OPTIONS: MilochatOptions = {
     ffz: true,
-    formatAt: true
+    tag: {
+        at: true,
+        matches: [
+            {
+                regex: /neon/ig,
+                attribute: "style",
+                value: "color: red;"
+            }
+        ]
+    }
 };
 
 const DEFAULT_HANDLEBAR_OPTS: CompileOptions = {
@@ -104,9 +167,9 @@ function ChatBox(props: any) {
         let chat = realChat(props.channel);
 
         chat.onMessage((message: ChatMessage) => {
-            if (!options.blacklist || options.blacklist.find(black => black.localeCompare(message.name, 'en')) !== undefined) {
-                message.message = htmlifyMessage(message.message, message.tags, preload, options);
-                console.log(message);
+            let raw = message.message;
+            if (!isBlacklistUser(options, message.name) && !isBlacklistMessage(options, raw)) {
+                message.message = htmlifyMessage(raw, message.tags, preload, options);
                 setLog(l => [...l, message]);
             }
         });
@@ -170,9 +233,15 @@ function htmlifyMessage(raw: string, tags: any, preload: Preload, options: Miloc
         html = html.replaceAll(regex, tag);
     }
 
-    if (options.formatAt) {
+    if (options.tag?.at) {
         const AT_REGEX = /(@\S+)/g;
         html = html.replaceAll(AT_REGEX, '<span class="ping">$1</span>');
+    }
+
+    if (options.tag?.matches) {
+        for (let test of options.tag.matches) {
+            html = html.replaceAll(test.regex, `<span ${test.attribute}="${test.value}">$&</span>`);
+        }
     }
 
     return html;
