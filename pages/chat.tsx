@@ -5,11 +5,17 @@ import { Client, realChat } from "../src/Client";
 import { EmoteBank, getAllFFZ } from "../src/Emotes";
 import { Template } from "../src/Template";
 import { useRouter } from "next/router";
+
+import Handlebars from "handlebars";
 import React from "react";
 
 export interface MilochatOptions {
     ffz?: boolean
     emotes?: EmoteBank
+}
+
+interface Preload {
+    emotes: EmoteBank;
 }
 
 class AsyncLoad<T> {
@@ -31,9 +37,6 @@ class AsyncLoad<T> {
         return this.data || def;
     }
 }
-
-const IMG_TAG = /<img.*?>/g;
-const ONLY_IMG_TAG =/^<img.*?>$/;
 
 class ChatMessage {
     tags: any;
@@ -62,18 +65,34 @@ class ChatMessage {
     }
 
     private static isEmoteOnly(msg: string): boolean {
+        const IMG_TAG = /<img.*?>/g;
         return msg.replaceAll(IMG_TAG, "").trim().length === 0;
     }
 
     private static isOneEmoteOnly(msg: string): boolean {
+        const ONLY_IMG_TAG =/^<img.*?>$/;
         return ONLY_IMG_TAG.test(msg);
     }
+}
+
+const DEFAULT_TEMPLATE = `
+    <span class="time">{{date timestamp "H:mm"}}</span>
+    <span class="name" style="color:{{color}};">{{name}}: </span>
+    <span class="message">{{message}}</span>
+`;
+
+const DEFAULT_OPTIONS: MilochatOptions = {
+    ffz: true
+};
+
+const DEFAULT_HANDLEBAR_OPTS: CompileOptions = {
+    noEscape: true
 }
 
 function Chat(props: any) {
     const router = useRouter();
 
-    let options = (props.options || {}) as MilochatOptions;
+    let options = DEFAULT_OPTIONS;
 
     let [ffz, setFfz] = useState(new AsyncLoad<EmoteBank>());
     let [channel, setChannel] = useState<string>();
@@ -95,12 +114,14 @@ function Chat(props: any) {
     }, [router.isReady, options.ffz]);
 
     if (ffz.loaded && channel !== undefined) {
-        let bank: EmoteBank = {
-            ...(options.emotes || {}),
-            ...ffz.getData({})
+        let preload: Preload = {
+            emotes: {
+                ...(options.emotes || {}),
+                ...ffz.getData({})
+            }
         }
         return (
-            <ChatBox channel={channel} emotes={bank} options={options}/>
+            <ChatBox channel={channel} preload={preload} options={options}/>
         )
     } else {
         return (
@@ -111,12 +132,10 @@ function Chat(props: any) {
 
 function ChatBox(props: any) {
     let template = props.template as string;
-    let options = props.options as MilochatOptions;
-    let emote_bank = props.emotes as EmoteBank;
+    let preload = props.preload as Preload;
     let [log, setLog] = useState(new Array<ChatMessage>());
 
     useEffect(() => {
-        console.log("Setting up client");
         let chat: Client;
         if (props.channel) {
             chat = realChat(props.channel);
@@ -125,22 +144,24 @@ function ChatBox(props: any) {
         }
 
         chat.onMessage((_channel: string, tags: any, message: string) => {
-            let nextLine = new ChatMessage(tags, htmlifyMessage(message, tags.emotes, emote_bank));
+            let nextLine = new ChatMessage(tags, htmlifyMessage(message, tags, preload));
             setLog(l => [...l, nextLine]);
         });
 
         chat.start();
 
         return () => chat.end();
-    }, [props.channel, emote_bank]);
+    }, [props.channel, preload.emotes]);
     
+    let templateFunc = Handlebars.compile(template || DEFAULT_TEMPLATE, DEFAULT_HANDLEBAR_OPTS);
+
     return (
         <>
         {
             log.map(line => {
                 return (
                     <div className="row" key={line.id}>
-                        <Template template={template || DEFAULT_TEMPLATE} data={line} />
+                        <Template template={templateFunc} data={line} />
                     </div>
                 )
             })
@@ -149,14 +170,9 @@ function ChatBox(props: any) {
     )
 }
 
-const DEFAULT_TEMPLATE = `
-    <span class="name">{{name}}: </span>
-    <span class="message">{{message}}</span>
-`;
-
-function htmlifyMessage(raw: string, twitchEmoteTags: any, otherEmotes: EmoteBank): string {
+function htmlifyMessage(raw: string, tags: any, preload: Preload): string {
     let html = "";
-    let emotesFromTwitch = parseTwitchEmoteObj(twitchEmoteTags);
+    let emotesFromTwitch = parseTwitchEmoteObj(tags.emotes);
     let idx = 0;
 
     while (idx < raw.length) {
@@ -180,8 +196,8 @@ function htmlifyMessage(raw: string, twitchEmoteTags: any, otherEmotes: EmoteBan
         }
     }
 
-    for (let emote in otherEmotes) {
-        let [prime] = otherEmotes[emote];
+    for (let emote in preload.emotes) {
+        let [prime] = preload.emotes[emote];
         let regex = new RegExp("\\b" + emote + "\\b", "g");
         let tag = `<img class="emote other" src="${prime}" alt="${emote}">`;
         html = html.replaceAll(regex, tag);
