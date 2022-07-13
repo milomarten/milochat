@@ -21,9 +21,10 @@ export class ChatMessage {
     color: string;
     mod: boolean;
     sub: boolean;
-    subMonths: { badge: number, total: number } | undefined;
+    subMonths: { badge: number, total: number, tier: number } | undefined;
     turbo: boolean;
     partner: boolean;
+    broadcaster: boolean;
     timestamp: number;
     emoteOnly: boolean;
     isOneEmoteOnly: boolean;
@@ -41,13 +42,26 @@ export class ChatMessage {
         this.sub = tags.subscriber;
         this.turbo = tags.turbo;
         this.partner = tags.badges && tags.badges.partner !== undefined;
+        this.broadcaster = tags.badges && tags.badges.broadcaster !== undefined;
         this.timestamp = parseInt(tags['tmi-sent-ts']);
         this.emoteOnly = ChatMessage.isEmoteOnly(message);
         this.isOneEmoteOnly = this.emoteOnly && ChatMessage.isOneEmoteOnly(message);
 
         if (this.sub) {
+            let badge = parseInt(tags.badges.subscriber);
+            let tier;
+            if (badge < 1000) {
+                tier = 1;
+            } else if (badge < 3000) {
+                tier = 2;
+                badge -= 2000;
+            } else {
+                tier = 3;
+                badge -= 3000;
+            }
             this.subMonths = {
-                badge: parseInt(tags.badges.subscriber),
+                badge,
+                tier,
                 total: parseInt(tags['badge-info'].subscriber)
             }
         }
