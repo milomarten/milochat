@@ -1,7 +1,8 @@
 export type EmoteBank = { [key: string]: string[] };
 
-export async function getAllFFZ(channel?: string | null): Promise<EmoteBank> {
-    let promises = [getGlobalFFZ(), channel ? getChannelFFZ(channel) : Promise.resolve({})];
+export async function getAllFFZMulti(channel?: string[]): Promise<EmoteBank> {
+    let localPromises = channel ? channel.map(c => getChannelFFZ(c)) : [];
+    let promises = [getGlobalFFZ(), ...localPromises];
 
     let banks = await Promise.all(promises);
     let merged = {};
@@ -22,9 +23,9 @@ async function getGlobalFFZ(): Promise<EmoteBank> {
 }
 
 async function getChannelFFZ(channel: string): Promise<EmoteBank> {
-    console.log("Fetching channel emotes from FFZ...");
+    console.log(`Fetching emotes for channel ${channel} from FFZ...`);
     const data = await callFFZ("https://api.frankerfacez.com/v1/room/" + channel);
-    console.log("Loaded %d channel emotes from FFZ", Object.keys(data).length);
+    console.log(`Loaded ${Object.keys(data).length} emotes for channel ${channel}`);
     return data;
 }
 

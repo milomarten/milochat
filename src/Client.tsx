@@ -1,3 +1,4 @@
+import _ from 'lodash';
 import tmi from 'tmi.js';
 
 export type MessageListener = (message: ChatMessage) => void;
@@ -12,6 +13,7 @@ export interface Client {
 export class ChatMessage {
     tags: any;
     message: string;
+    channel: string;
     
     id: string;
     type: string;
@@ -26,11 +28,12 @@ export class ChatMessage {
     emoteOnly: boolean;
     isOneEmoteOnly: boolean;
 
-    constructor(tags: any, message: string) {
+    constructor(channel: string, tags: any, message: string) {
         this.tags = tags;
         this.message = message;
 
         this.id = tags.id;
+        this.channel = _.trimStart(channel, '#');
         this.type = tags['message-type'];
         this.name = tags['display-name'];
         this.color = tags.color || ChatMessage.createColor(this.name);
@@ -82,9 +85,9 @@ function hash(value: string): number {
     return hash;
 }
 
-export function realChat(channel: string): Client {
+export function realChat(channels: string[]): Client {
     const client = new tmi.Client({
-        channels: [ channel ]
+        channels
     });
 
     return {
@@ -94,10 +97,11 @@ export function realChat(channel: string): Client {
         },
         onMessage: function(f: MessageListener) {
             client.on('message', function(channel: string, tags: any, message: string) {
-                f(new ChatMessage(tags, message));
+                f(new ChatMessage(channel, tags, message));
             });
 
             client.on("subscription", function(channel, username, method, message, userstate) {
+                console.log("Subcrib");
                 console.log(arguments);
             });
         },

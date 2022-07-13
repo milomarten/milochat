@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChatMessage, Client, realChat } from "../src/Client";
 
-import { EmoteBank, getAllFFZ } from "../src/Emotes";
+import { EmoteBank, getAllFFZMulti } from "../src/Emotes";
 import { Template } from "../src/Template";
 import { useRouter } from "next/router";
 
 import Handlebars from "handlebars";
 import React from "react";
+import _ from "lodash";
 
 export interface MilochatOptions {
     /// Toggles whether FFZ emotes are supported
@@ -96,6 +97,7 @@ class AsyncLoad<T> {
 }
 
 const DEFAULT_TEMPLATE = `
+    ({{channel}})
     <span class="time">{{date timestamp "H:mm"}}</span>
     <span class="name" style="color:{{color}};">{{name}}: </span>
     <span class="message">{{message}}</span>
@@ -118,17 +120,17 @@ function Chat() {
     let options = DEFAULT_OPTIONS;
 
     let [ffz, setFfz] = useState(new AsyncLoad<EmoteBank>());
-    let [channel, setChannel] = useState<string>();
+    let [channels, setChannels] = useState<string[]>();
     
     useEffect(() => {
         if (router.isReady) {
-            const c = (router.query.channel as string) || "";
-
-            console.log("Listening to channel " + c);
-            setChannel(c);
+            const c = _.castArray(router.query.channel || "");
+            const channel_array = c[0] === "" ? [] : c;
+            
+            setChannels(channel_array);
 
             if (c && options.ffz) {
-                getAllFFZ(c)
+                getAllFFZMulti(c)
                     .then(bank => setFfz(f => f.complete(bank)));
             } else {
                 setFfz(f => f.complete({}));
@@ -136,12 +138,12 @@ function Chat() {
         }
     }, [router.isReady, options.ffz]);
 
-    if (ffz.loaded && channel !== undefined) {
+    if (ffz.loaded && channels !== undefined) {
         let preload: Preload = {
             emotes: ffz.getData({})
         }
         return (
-            <ChatBox channel={channel} preload={preload} options={options}/>
+            <ChatBox channels={channels} preload={preload} options={options}/>
         )
     } else {
         return (
@@ -157,12 +159,13 @@ function ChatBox(props: any) {
     let [log, setLog] = useState(new Array<ChatMessage>());
 
     useEffect(() => {
-        let chat = realChat(props.channel);
+        let chat = realChat(props.channels);
 
         chat.onMessage((message: ChatMessage) => {
             let raw = message.message;
             if (!isBlacklistUser(options, message.name) && !isBlacklistMessage(options, raw)) {
                 message.message = htmlifyMessage(raw, message.tags, preload, options);
+                console.log(message);
                 setLog(l => [...l, message]);
             }
         });
