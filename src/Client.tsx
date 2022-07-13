@@ -50,14 +50,14 @@ export class ChatMessage {
         if (this.sub) {
             let badge = parseInt(tags.badges.subscriber);
             let tier;
-            if (badge < 1000) {
-                tier = 1;
-            } else if (badge < 3000) {
+            if (badge >= 3000) {
+                tier = 3;
+                badge -= 3000;
+            } else if (badge >= 2000) {
                 tier = 2;
                 badge -= 2000;
             } else {
-                tier = 3;
-                badge -= 3000;
+                tier = 1;
             }
             this.subMonths = {
                 badge,
