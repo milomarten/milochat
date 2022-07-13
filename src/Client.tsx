@@ -33,7 +33,7 @@ export class ChatMessage {
         this.id = tags.id;
         this.type = tags['message-type'];
         this.name = tags['display-name'];
-        this.color = tags.color;
+        this.color = tags.color || ChatMessage.createColor(this.name);
         this.mod = tags.mod;
         this.sub = tags.subscriber;
         this.turbo = tags.turbo;
@@ -59,10 +59,27 @@ export class ChatMessage {
         const ONLY_IMG_TAG =/^<img.*?>$/;
         return ONLY_IMG_TAG.test(msg);
     }
+
+    private static createColor(name: string): string {
+        let h = hash(name) & 0xFFFFFF;
+        return "#" + h.toString(16);
+    }
 }
 
 export class SubMessage {
 
+}
+
+function hash(value: string): number {
+    var hash = 0;
+        
+    for (let i = 0; i < value.length; i++) {
+        let char = value.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash;
+    }
+        
+    return hash;
 }
 
 export function realChat(channel: string): Client {

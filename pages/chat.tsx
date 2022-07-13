@@ -104,14 +104,7 @@ const DEFAULT_TEMPLATE = `
 const DEFAULT_OPTIONS: MilochatOptions = {
     ffz: true,
     tag: {
-        at: true,
-        matches: [
-            {
-                regex: /neon/ig,
-                attribute: "style",
-                value: "color: red;"
-            }
-        ]
+        at: true
     }
 };
 
