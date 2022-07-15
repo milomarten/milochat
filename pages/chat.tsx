@@ -8,6 +8,7 @@ import { useRouter } from "next/router";
 import Handlebars from "handlebars";
 import React from "react";
 import _ from "lodash";
+import classNames from "classnames";
 
 /** The options that can be used to configure Milochat */
 export interface MilochatOptions {
@@ -28,8 +29,26 @@ export interface MilochatOptions {
         matches?: {regex: string | RegExp, attribute: string, value: string}[],
         /** If true, any pings are wrapped in a span tag with class "ping" */
         at?: boolean
+    },
+    /** Describes any size limits to the chat */
+    limit?: {
+        /** The type of limit */
+        flavor: ChatSizeLimit | ChatTimeLimit,
+        /** 
+         * A fade timer 
+         * If present, the chat will wait <fade> ms before deleting completely.
+         * During this time, the row will have the "deleting" class.
+         * 
+         * If absent, or zero, the node is deleted immediately.
+         * */
+        fade?: number
     }
 }
+
+/** A limit where chat is constrainted to a fixed number of lines */
+export type ChatSizeLimit = { type: 'count', count: number };
+/** A limit where chat will only show for a fixed number of milliseconds */
+export type ChatTimeLimit = { type: 'time', ms: number };
 
 function isBlacklistUser(opts: MilochatOptions, user: string): boolean {
     if (opts.blacklist?.users) {
@@ -120,6 +139,13 @@ const DEFAULT_OPTIONS: MilochatOptions = {
     ffz: true,
     tag: {
         at: true
+    },
+    limit: {
+        flavor: {
+            type: 'time',
+            ms: 10_000
+        },
+        fade: 4000
     }
 };
 
@@ -192,9 +218,52 @@ function ChatBox(props: any) {
         chat.onMessage((message: ChatMessage) => {
             let raw = message.message;
             if (!isBlacklistUser(options, message.name) && !isBlacklistMessage(options, raw)) {
-                message.message = htmlifyMessage(raw, message.tags, preload, options);
-                console.log(message);
-                setLog(l => [...l, message]);
+                message.setMessage(htmlifyMessage(raw, message.tags, preload, options));
+
+                if (options.limit?.flavor.type === "time") {
+                    if (options.limit?.fade) {
+                        setTimeout(() => {
+                            setLog(l => {
+                                return l.map(line => {
+                                    if (line.id === message.id) {
+                                        line.markedForDelete = true;
+                                    }
+                                    return line;
+                                });
+                            });
+                        }, options.limit.flavor.ms);
+
+                        setTimeout(() => {
+                            setLog(l => _.filter(l, (m) => m.id !== message.id));
+                        }, options.limit.flavor.ms + options.limit.fade);
+                    } else {
+                        setTimeout(() => {
+                            setLog(l => _.filter(l, (m) => m.id !== message.id));
+                        }, options.limit.flavor.ms);
+                    }
+                }
+
+                setLog(l => {
+                    let concat = [...l, message];
+                    if (options.limit?.flavor.type === "count") {
+                        let max = options.limit.flavor.count;
+                        if (concat.length > max) {
+                            if (options.limit?.fade) {
+                                // Create a timeout which will delete the old messages
+                                // The "deleting" class will be added, for custom fading logic
+                                let toNix = _.take(concat, concat.length - max);
+                                _.forEach(toNix, i => i.markedForDelete = true);
+                                setTimeout(() => {
+                                    setLog(l => _.differenceWith(l, toNix, (cm1, cm2) => cm1.id === cm2.id));
+                                }, options.limit.fade);
+                            } else {
+                                concat = _.takeRight(concat, max);
+                            }
+                        }
+                    }
+
+                    return concat;
+                });
             }
         });
 
@@ -214,7 +283,7 @@ function ChatBox(props: any) {
         {
             log.map(line => {
                 return (
-                    <div className="row" key={line.id}>
+                    <div className={classNames('row', { deleting: line.markedForDelete })} key={line.id}>
                         <Template template={templateFunc} data={line} />
                     </div>
                 )

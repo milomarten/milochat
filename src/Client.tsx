@@ -35,6 +35,8 @@ export class ChatMessage {
     message: string;
     /** The channel this message originated from */
     channel: string;
+    /** This message is marked for deletion. Bookkeeping. */
+    markedForDelete: boolean;
     
     /** The unique ID which represents this message */
     id: string;
@@ -69,6 +71,7 @@ export class ChatMessage {
     constructor(channel: string, tags: any, message: string) {
         this.tags = tags;
         this.message = message;
+        this.markedForDelete = false;
 
         this.id = tags.id;
         this.channel = _.trimStart(channel, '#');
@@ -102,6 +105,12 @@ export class ChatMessage {
                 total: parseInt(tags['badge-info'].subscriber)
             }
         }
+    }
+
+    setMessage(message: string): void {
+        this.message = message;
+        this.emoteOnly = ChatMessage.isEmoteOnly(message);
+        this.isOneEmoteOnly = this.emoteOnly && ChatMessage.isOneEmoteOnly(message);
     }
 
     private static isEmoteOnly(msg: string): boolean {
