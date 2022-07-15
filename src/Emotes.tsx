@@ -1,5 +1,10 @@
 export type EmoteBank = { [key: string]: string[] };
 
+/**
+ * Asynchronously retrieve global and channel FFZ emotes
+ * @param channel The channels to pull from. If absent, only global are pulled
+ * @returns An emote bank containing all the emotes
+ */
 export async function getAllFFZMulti(channel?: string[]): Promise<EmoteBank> {
     let localPromises = channel ? channel.map(c => getChannelFFZ(c)) : [];
     let promises = [getGlobalFFZ(), ...localPromises];
@@ -15,6 +20,10 @@ export async function getAllFFZMulti(channel?: string[]): Promise<EmoteBank> {
     return merged;
 }
 
+/**
+ * Asynchrnously retrieves the global FFZ emotes 
+ * @returns An emote bank containing the global FFZ emotes
+ */
 async function getGlobalFFZ(): Promise<EmoteBank> {
     console.log("Fetching global emotes from FFZ...");
     const data = await callFFZ("https://api.frankerfacez.com/v1/set/global");
@@ -22,6 +31,11 @@ async function getGlobalFFZ(): Promise<EmoteBank> {
     return data;
 }
 
+/**
+ * Asynchronously retrieves the FFZ emotes of a channel
+ * @param channel The channel name
+ * @returns An emote bank containing the FFZ emotes for that channel
+ */
 async function getChannelFFZ(channel: string): Promise<EmoteBank> {
     console.log(`Fetching emotes for channel ${channel} from FFZ...`);
     const data = await callFFZ("https://api.frankerfacez.com/v1/room/" + channel);
@@ -29,6 +43,11 @@ async function getChannelFFZ(channel: string): Promise<EmoteBank> {
     return data;
 }
 
+/**
+ * Asynchrously call a URL and parse the result as an Emote Bank
+ * @param url The URL to call
+ * @returns The Emote Bank returned from the url
+ */
 function callFFZ(url: string): Promise<EmoteBank> {
     return fetch(url)
         .then(response => response.json())

@@ -3,30 +3,67 @@ import tmi from 'tmi.js';
 
 export type MessageListener = (message: ChatMessage) => void;
 
+/** Describes a common interface for a chat client */
 export interface Client {
+    /**
+     * Start the client 
+     * Perform initial setup and begin receiving messages
+     */
     start(): void,
+    /**
+     * Stop the client
+     * Shut down all resources and stop receiving messages
+     */
     end(): void,
+    /**
+     * Register some logic to perform when a message is received
+     * @param hook The code that should be executed on message
+     */
     onMessage(hook: MessageListener): void,
+    /**
+     * Register some logic to perform when the clear chat command is received
+     * @param hook The code that should be executed on clear
+     */
     onClearChat(hook: () => void): void
 }
 
+/** Represents a chat message */
 export class ChatMessage {
+    /** The raw tags that come from Twitch */
     tags: any;
+    /** The message received from Twitch, HTML formatted */
     message: string;
+    /** The channel this message originated from */
     channel: string;
     
+    /** The unique ID which represents this message */
     id: string;
-    type: string;
+    /** The type of message */
+    type: "chat" | "action"; // Note: This could also be whisper, but since we are anonymous, there is no chance.
+    /** The chatter's username */
     name: string;
+    /** 
+     * The chatter's color, or some "random" color if none set. 
+     * The "random" color is consistent, and depends on the chatter's name.
+     * */
     color: string;
+    /** If true, the sender is a mod in this channel */
     mod: boolean;
+    /** If true, the sender is a sub in this channel */
     sub: boolean;
+    /** If present, contains further information about the user's subscription */
     subMonths: { badge: number, total: number, tier: number } | undefined;
+    /** If true, the sender has Turbo */
     turbo: boolean;
+    /** If true, the sender is a Twitch Partner */
     partner: boolean;
+    /** If true, the sender is the broadcaster of this channel */
     broadcaster: boolean;
+    /** The unix timestamp this message was sent */
     timestamp: number;
+    /** If true, this message contains only emotes */
     emoteOnly: boolean;
+    /** If true, this message contains only one emote */
     isOneEmoteOnly: boolean;
 
     constructor(channel: string, tags: any, message: string) {
@@ -77,9 +114,24 @@ export class ChatMessage {
         return ONLY_IMG_TAG.test(msg);
     }
 
+    /**
+     * Generate a color for a given name.
+     * The input is hashed, and the least significant three bytes are interpreted
+     * as an RGB color.
+     * @param name The username 
+     * @returns A color, prefixed with #
+     */
     private static createColor(name: string): string {
-        let h = hash(name) & 0xFFFFFF;
-        return "#" + h.toString(16);
+        var hash = 0;
+        
+        for (let i = 0; i < name.length; i++) {
+            let char = name.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash;
+        }
+
+        let h = hash & 0xFFFFFF;
+        return "#" + _.padStart(h.toString(16), 6, '0');
     }
 }
 
@@ -87,18 +139,11 @@ export class SubMessage {
 
 }
 
-function hash(value: string): number {
-    var hash = 0;
-        
-    for (let i = 0; i < value.length; i++) {
-        let char = value.charCodeAt(i);
-        hash = ((hash << 5) - hash) + char;
-        hash = hash & hash;
-    }
-        
-    return hash;
-}
-
+/**
+ * Generate a real chat client, which connects to Twitch
+ * @param channels The channels to connect to
+ * @returns The created client
+ */
 export function realChat(channels: string[]): Client {
     const client = new tmi.Client({
         channels

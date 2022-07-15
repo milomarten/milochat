@@ -9,23 +9,24 @@ import Handlebars from "handlebars";
 import React from "react";
 import _ from "lodash";
 
+/** The options that can be used to configure Milochat */
 export interface MilochatOptions {
-    /// Toggles whether FFZ emotes are supported
+    /** Toggles whether FFZ emotes are supported */
     ffz?: boolean
     blacklist?: {
-        /// If a message is from this user, do not display
+        /** If a message is from this user, do not display */
         users?: (string | RegExp)[]
-        /// If a message includes any of these words, do not display
+        /** If a message includes any of these words, do not display */
         includes?: string[]
-        /// If a message starts with any of these words, do not display
+        /** If a message starts with any of these words, do not display */
         prefixes?: string[]
-        /// If a message matches any of these regexes, do not display
+        /** If a message matches any of these regexes, do not display */
         matches?: RegExp[]
     },
     tag?: {
-        /// Wrap anything that matches this regex with a span tag with the following class
+        /** Wrap anything that matches this regex with a span tag with the following class */
         matches?: {regex: string | RegExp, attribute: string, value: string}[],
-        /// If true, any pings are wrapped in a span tag with class "ping"
+        /** If true, any pings are wrapped in a span tag with class "ping" */
         at?: boolean
     }
 }
@@ -72,30 +73,41 @@ function isBlacklistMessage(opts: MilochatOptions, message: string): boolean {
     return false;
 }
 
+/** Contains an assortment of data loaded in before chat is started */
 interface Preload {
     emotes: EmoteBank;
 }
 
+/** Helper class which keeps track of a piece of data being loaded in asynchronously */
 class AsyncLoad<T> {
     data?: T;
 
+    /**
+     * Create this object, possibly with some data
+     * @param data If present, this means the load is done
+     */
     constructor(data?: T) {
         this.data = data;
     }
 
+    /**
+     * Check if the load is complete
+     */
     get loaded(): boolean {
         return this.data !== undefined;
     }
 
-    complete(data: T): AsyncLoad<T> {
-        return new AsyncLoad<T>(data);
-    }
-
+    /**
+     * Get the inside data, or a suitable default if not complete
+     * @param def The default
+     * @returns The finished data, or the default
+     */
     getData(def: T): T {
         return this.data || def;
     }
 }
 
+/** The default template */
 const DEFAULT_TEMPLATE = `
     ({{channel}})
     <span class="time">{{date timestamp "H:mm"}}</span>
@@ -103,6 +115,7 @@ const DEFAULT_TEMPLATE = `
     <span class="message">{{message}}</span>
 `;
 
+/** The default options */
 const DEFAULT_OPTIONS: MilochatOptions = {
     ffz: true,
     tag: {
@@ -110,10 +123,16 @@ const DEFAULT_OPTIONS: MilochatOptions = {
     }
 };
 
+/** The default Handlebar compile options */
 const DEFAULT_HANDLEBAR_OPTS: CompileOptions = {
     noEscape: true
 }
 
+/**
+ * The root container which begins the preload and starts up chat when complete
+ * No properties are used. Channels are pulled as query params; everything else
+ * uses defaults for now.
+ */
 function Chat() {
     const router = useRouter();
 
@@ -131,9 +150,9 @@ function Chat() {
 
             if (c && options.ffz) {
                 getAllFFZMulti(c)
-                    .then(bank => setFfz(f => f.complete(bank)));
+                    .then(bank => setFfz(f => new AsyncLoad(bank)));
             } else {
-                setFfz(f => f.complete({}));
+                setFfz(f => new AsyncLoad({}));
             }
         }
     }, [router.isReady, options.ffz]);
@@ -152,6 +171,15 @@ function Chat() {
     }
 }
 
+/**
+ * The box which actually displays chat
+ * Props:
+ * * template: A Handlebars-friendly string to be resolved into HTML
+ * * preload: Values pulled in from the loading step.
+ * * options: Milochat options for configuration
+ * @param props Props
+ * @returns The chat lines. Each line is run through the template
+ */
 function ChatBox(props: any) {
     let template = props.template as string;
     let preload = props.preload as Preload;
