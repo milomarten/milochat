@@ -224,12 +224,13 @@ function ChatBox(props: any) {
                     if (options.limit?.fade) {
                         setTimeout(() => {
                             setLog(l => {
-                                return l.map(line => {
+                                _.forEach(l, line => {
                                     if (line.id === message.id) {
                                         line.markedForDelete = true;
                                     }
-                                    return line;
                                 });
+
+                                return [...l];
                             });
                         }, options.limit.flavor.ms);
 
