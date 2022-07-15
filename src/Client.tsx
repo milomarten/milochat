@@ -27,42 +27,44 @@ export interface Client {
     onClearChat(hook: () => void): void
 }
 
+export type Message = ChatMessage;
+ 
 /** Represents a chat message */
 export class ChatMessage {
     /** The raw tags that come from Twitch */
-    tags: any;
+    readonly tags: any;
     /** The message received from Twitch, HTML formatted */
     message: string;
     /** The channel this message originated from */
-    channel: string;
+    readonly channel: string;
     /** This message is marked for deletion. Bookkeeping. */
     markedForDelete: boolean;
     
     /** The unique ID which represents this message */
-    id: string;
+    readonly id: string;
     /** The type of message */
-    type: "chat" | "action"; // Note: This could also be whisper, but since we are anonymous, there is no chance.
+    readonly type: "chat" | "action"; // Note: This could also be whisper, but since we are anonymous, there is no chance.
     /** The chatter's username */
-    name: string;
+    readonly name: string;
     /** 
      * The chatter's color, or some "random" color if none set. 
      * The "random" color is consistent, and depends on the chatter's name.
      * */
-    color: string;
+    readonly color: string;
     /** If true, the sender is a mod in this channel */
-    mod: boolean;
+    readonly mod: boolean;
     /** If true, the sender is a sub in this channel */
-    sub: boolean;
+    readonly sub: boolean;
     /** If present, contains further information about the user's subscription */
-    subMonths: { badge: number, total: number, tier: number } | undefined;
+    readonly subMonths: Readonly<{ badge: number, total: number, tier: number }> | undefined;
     /** If true, the sender has Turbo */
-    turbo: boolean;
+    readonly turbo: boolean;
     /** If true, the sender is a Twitch Partner */
-    partner: boolean;
+    readonly partner: boolean;
     /** If true, the sender is the broadcaster of this channel */
-    broadcaster: boolean;
+    readonly broadcaster: boolean;
     /** The unix timestamp this message was sent */
-    timestamp: number;
+    readonly timestamp: number;
     /** If true, this message contains only emotes */
     emoteOnly: boolean;
     /** If true, this message contains only one emote */

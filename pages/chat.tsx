@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChatMessage, Client, realChat } from "../src/Client";
+import { ChatMessage, Client, Message, realChat } from "../src/Client";
 
 import { EmoteBank, getAllFFZMulti } from "../src/Emotes";
 import { Template } from "../src/Template";
-import { useRouter } from "next/router";
+import { NextRouter, useRouter } from "next/router";
 
 import Handlebars from "handlebars";
 import React from "react";
@@ -33,7 +33,7 @@ export interface MilochatOptions {
     /** Describes any size limits to the chat */
     limit?: {
         /** The type of limit */
-        flavor: ChatSizeLimit | ChatTimeLimit,
+        flavor: Limit,
         /** 
          * A fade timer 
          * If present, the chat will wait <fade> ms before deleting completely.
@@ -45,10 +45,72 @@ export interface MilochatOptions {
     }
 }
 
+type Limit = ChatSizeLimit | ChatTimeLimit;
 /** A limit where chat is constrainted to a fixed number of lines */
 export type ChatSizeLimit = { type: 'count', count: number };
 /** A limit where chat will only show for a fixed number of milliseconds */
 export type ChatTimeLimit = { type: 'time', ms: number };
+
+function optionsFromRouter(router: NextRouter): [string[], MilochatOptions] {
+    let query = router.query;
+
+    function asBool(val: string | string[] | undefined): boolean {
+        if(_.isArray(val)) {
+            return _.last(val) === "true";
+        } else if (val === undefined) {
+            return false;
+        } else {
+            return val === "true";
+        }
+    }
+
+    function asStringArray(val: string | string[] | undefined): string[] {
+        if(_.isArray(val)) {
+            return val;
+        } else if (val === undefined) {
+            return [];
+        } else {
+            return [val];
+        }
+    }
+
+    function asNumber(val: string | string[] | undefined): number | undefined {
+        if(_.isArray(val)) {
+            const last = _.last(val);
+            return last ? parseInt(last) : undefined;
+        } else if (val === undefined) {
+            return undefined;
+        } else {
+            return parseInt(val);
+        }
+    }
+
+    const count = asNumber(query.count);
+    const ms = asNumber(query.time);
+
+    let flavor: Limit | undefined;
+    if (count) {
+        flavor = { type: "count", count };
+    } else if (ms) {
+        flavor = { type: "time", ms }
+    }
+
+    let limit;
+    if (flavor) {
+        limit = {
+            flavor,
+            fade: asNumber(query.fade)
+        }
+    }
+
+    const opts: MilochatOptions = {
+        ...DEFAULT_OPTIONS,
+        ffz: asBool(query.ffz),
+        limit
+    }
+
+    return [asStringArray(query.channel), opts];
+}
 
 function isBlacklistUser(opts: MilochatOptions, user: string): boolean {
     if (opts.blacklist?.users) {
@@ -115,15 +177,6 @@ class AsyncLoad<T> {
     get loaded(): boolean {
         return this.data !== undefined;
     }
-
-    /**
-     * Get the inside data, or a suitable default if not complete
-     * @param def The default
-     * @returns The finished data, or the default
-     */
-    getData(def: T): T {
-        return this.data || def;
-    }
 }
 
 /** The default template */
@@ -142,10 +195,10 @@ const DEFAULT_OPTIONS: MilochatOptions = {
     },
     limit: {
         flavor: {
-            type: 'time',
-            ms: 10_000
+            type: "count",
+            count: 10
         },
-        fade: 4000
+        fade: 2000
     }
 };
 
@@ -162,33 +215,32 @@ const DEFAULT_HANDLEBAR_OPTS: CompileOptions = {
 function Chat() {
     const router = useRouter();
 
-    let options = DEFAULT_OPTIONS;
-
     let [ffz, setFfz] = useState(new AsyncLoad<EmoteBank>());
-    let [channels, setChannels] = useState<string[]>();
+    let [options, setOptions] = useState<[string[], MilochatOptions]>();
     
     useEffect(() => {
         if (router.isReady) {
-            const c = _.castArray(router.query.channel || "");
-            const channel_array = c[0] === "" ? [] : c;
+            const [channels, opts] = optionsFromRouter(router);
+            console.log("Using options:");
+            console.log(opts);
             
-            setChannels(channel_array);
+            setOptions([channels, opts]);
 
-            if (c && options.ffz) {
-                getAllFFZMulti(c)
-                    .then(bank => setFfz(f => new AsyncLoad(bank)));
+            if (channels && opts.ffz) {
+                getAllFFZMulti(channels)
+                    .then(bank => setFfz(new AsyncLoad(bank)));
             } else {
-                setFfz(f => new AsyncLoad({}));
+                setFfz(new AsyncLoad({}));
             }
         }
-    }, [router.isReady, options.ffz]);
+    }, [router.isReady]);
 
-    if (ffz.loaded && channels !== undefined) {
+    if (ffz.loaded && options !== undefined) {
         let preload: Preload = {
-            emotes: ffz.getData({})
+            emotes: ffz.data || {}
         }
         return (
-            <ChatBox channels={channels} preload={preload} options={options}/>
+            <ChatBox channels={options[0]} preload={preload} options={options[1]}/>
         )
     } else {
         return (
@@ -210,7 +262,7 @@ function ChatBox(props: any) {
     let template = props.template as string;
     let preload = props.preload as Preload;
     let options = props.options as MilochatOptions;
-    let [log, setLog] = useState(new Array<ChatMessage>());
+    let [log, setLog] = useState(new Array<Message>());
 
     useEffect(() => {
         let chat = realChat(props.channels);
@@ -221,27 +273,9 @@ function ChatBox(props: any) {
                 message.setMessage(htmlifyMessage(raw, message.tags, preload, options));
 
                 if (options.limit?.flavor.type === "time") {
-                    if (options.limit?.fade) {
-                        setTimeout(() => {
-                            setLog(l => {
-                                _.forEach(l, line => {
-                                    if (line.id === message.id) {
-                                        line.markedForDelete = true;
-                                    }
-                                });
-
-                                return [...l];
-                            });
-                        }, options.limit.flavor.ms);
-
-                        setTimeout(() => {
-                            setLog(l => _.filter(l, (m) => m.id !== message.id));
-                        }, options.limit.flavor.ms + options.limit.fade);
-                    } else {
-                        setTimeout(() => {
-                            setLog(l => _.filter(l, (m) => m.id !== message.id));
-                        }, options.limit.flavor.ms);
-                    }
+                    setTimeout(() => {
+                        registerForDelete(message, setLog, options);
+                    }, options.limit.flavor.ms);
                 }
 
                 setLog(l => {
@@ -249,17 +283,8 @@ function ChatBox(props: any) {
                     if (options.limit?.flavor.type === "count") {
                         let max = options.limit.flavor.count;
                         if (concat.length > max) {
-                            if (options.limit?.fade) {
-                                // Create a timeout which will delete the old messages
-                                // The "deleting" class will be added, for custom fading logic
-                                let toNix = _.take(concat, concat.length - max);
-                                _.forEach(toNix, i => i.markedForDelete = true);
-                                setTimeout(() => {
-                                    setLog(l => _.differenceWith(l, toNix, (cm1, cm2) => cm1.id === cm2.id));
-                                }, options.limit.fade);
-                            } else {
-                                concat = _.takeRight(concat, max);
-                            }
+                            let toNix = _.take(concat, concat.length - max);
+                            registerForDelete(toNix, setLog, options);
                         }
                     }
 
@@ -274,7 +299,10 @@ function ChatBox(props: any) {
 
         chat.start();
 
-        return () => chat.end();
+        return () => {
+            setLog([]);
+            chat.end();
+        }
     }, [props.channel, preload.emotes]);
     
     let templateFunc = useMemo(() => Handlebars.compile(template || DEFAULT_TEMPLATE, DEFAULT_HANDLEBAR_OPTS), [template]);
@@ -358,6 +386,30 @@ function parseTwitchEmoteObj(raw: any): TwitchMap {
         }
     }
     return map;
+}
+
+function registerForDelete(message: Message | Message[], changeFunc: React.Dispatch<React.SetStateAction<Message[]>>, options: MilochatOptions) {
+    if (_.isArray(message)) {
+        const toNix = message as Message[];
+        if (options.limit?.fade) {
+            _.forEach(toNix, i => i.markedForDelete = true);
+            setTimeout(() => {
+                changeFunc(lines => _.differenceBy(lines, toNix, 'id'));
+            }, options.limit.fade);
+        } else {
+            changeFunc(lines => _.differenceBy(lines, toNix, 'id'));
+        }
+    } else {
+        const toNix = message as Message;
+        if (options.limit?.fade) {
+            toNix.markedForDelete = true;
+            setTimeout(() => {
+                changeFunc(lines => _.filter(lines, line => line.id !== toNix.id));
+            }, options.limit.fade);
+        } else {
+            changeFunc(lines => _.filter(lines, line => line.id !== toNix.id));
+        }
+    }
 }
 
 export default Chat;
