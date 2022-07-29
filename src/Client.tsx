@@ -1,7 +1,8 @@
 import _ from 'lodash';
 import tmi from 'tmi.js';
+import {v4 as uuid} from 'uuid';
 
-export type MessageListener = (message: ChatMessage) => void;
+export type MessageListener<T> = (message: T) => void;
 
 /** Describes a common interface for a chat client */
 export interface Client {
@@ -19,7 +20,7 @@ export interface Client {
      * Register some logic to perform when a message is received
      * @param hook The code that should be executed on message
      */
-    onMessage(hook: MessageListener): void,
+    onMessage(hook: MessageListener<ChatMessage>): void,
     /**
      * Register some logic to perform when the clear chat command is received
      * @param hook The code that should be executed on clear
@@ -27,8 +28,8 @@ export interface Client {
     onClearChat(hook: () => void): void
 }
 
-export type Message = ChatMessage;
- 
+export type Message = ChatMessage | SubMessage | SystemMessage;
+
 /** Represents a chat message */
 export class ChatMessage {
     /** The raw tags that come from Twitch */
@@ -147,7 +148,43 @@ export class ChatMessage {
 }
 
 export class SubMessage {
+    readonly type = "sub";
+    /** The raw tags that come from Twitch */
+    readonly tags: any;
+    /** The message received from Twitch, HTML formatted */
+    message: string;
+    /** The channel this message originated from */
+    readonly channel: string;
+    /** This message is marked for deletion. Bookkeeping. */
+    markedForDelete: boolean;
 
+    /** The unique ID which represents this message */
+    readonly id: string;
+
+    constructor(channel: string, tags: any, message: string) {
+        this.tags = tags;
+        this.channel = channel;
+        this.message = message;
+        this.markedForDelete = false;
+
+        this.id = tags.id;
+    }
+}
+
+export class SystemMessage {
+    readonly type = "system";
+    /** The message received from Twitch, HTML formatted */
+    message: string;
+    /** This message is marked for deletion. Bookkeeping. */
+    markedForDelete: boolean;
+    /** The unique ID which represents this message */
+    readonly id: string;
+
+    constructor(message: string) {
+        this.message = message;
+        this.markedForDelete = false;
+        this.id = uuid();
+    }
 }
 
 /**
@@ -165,14 +202,9 @@ export function realChat(channels: string[]): Client {
             console.log("Starting Client");
             client.connect().catch(console.error);
         },
-        onMessage: function(f: MessageListener) {
+        onMessage: function(f: MessageListener<ChatMessage>) {
             client.on('message', function(channel: string, tags: any, message: string) {
                 f(new ChatMessage(channel, tags, message));
-            });
-
-            client.on("subscription", function(channel, username, method, message, userstate) {
-                console.log("Subcrib");
-                console.log(arguments);
             });
         },
         onClearChat: function(f: () => void) {
