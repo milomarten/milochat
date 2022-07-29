@@ -42,7 +42,8 @@ export interface MilochatOptions {
          * If absent, or zero, the node is deleted immediately.
          * */
         fade?: number
-    }
+    },
+    direction?: "up" | "down"
 }
 
 type Limit = ChatSizeLimit | ChatTimeLimit;
@@ -61,6 +62,16 @@ function optionsFromRouter(router: NextRouter): [string[], MilochatOptions] {
             return false;
         } else {
             return val === "true";
+        }
+    }
+
+    function asString(val: string | string[] | undefined): string | undefined {
+        if(_.isArray(val)) {
+            return val[0];
+        } else if (val === undefined) {
+            return undefined;
+        } else {
+            return val;
         }
     }
 
@@ -87,6 +98,7 @@ function optionsFromRouter(router: NextRouter): [string[], MilochatOptions] {
 
     const count = asNumber(query.count);
     const ms = asNumber(query.time);
+    const direction = asString(query.direction);
 
     let flavor: Limit | undefined;
     if (count) {
@@ -106,7 +118,8 @@ function optionsFromRouter(router: NextRouter): [string[], MilochatOptions] {
     const opts: MilochatOptions = {
         ...DEFAULT_OPTIONS,
         ffz: asBool(query.ffz),
-        limit
+        limit,
+        direction: direction == "up" ? "up" : "down"
     }
 
     return [asStringArray(query.channel), opts];
@@ -189,16 +202,8 @@ const DEFAULT_TEMPLATE = `
 
 /** The default options */
 const DEFAULT_OPTIONS: MilochatOptions = {
-    ffz: true,
     tag: {
         at: true
-    },
-    limit: {
-        flavor: {
-            type: "count",
-            count: 10
-        },
-        fade: 2000
     }
 };
 
@@ -310,7 +315,7 @@ function ChatBox(props: any) {
     return (
         <>
         {
-            log.map(line => {
+            (options.direction === "up" ? [...log].reverse() : log).map(line => {
                 return (
                     <div className={classNames('row', { deleting: line.markedForDelete })} key={line.id}>
                         <Template template={templateFunc} data={line} />
@@ -391,23 +396,27 @@ function parseTwitchEmoteObj(raw: any): TwitchMap {
 function registerForDelete(message: Message | Message[], changeFunc: React.Dispatch<React.SetStateAction<Message[]>>, options: MilochatOptions) {
     if (_.isArray(message)) {
         const toNix = message as Message[];
+        const destroy = function() {
+            changeFunc(lines => _.differenceBy(lines, toNix, 'id'));
+        }
+
         if (options.limit?.fade) {
             _.forEach(toNix, i => i.markedForDelete = true);
-            setTimeout(() => {
-                changeFunc(lines => _.differenceBy(lines, toNix, 'id'));
-            }, options.limit.fade);
+            setTimeout(destroy, options.limit.fade);
         } else {
-            changeFunc(lines => _.differenceBy(lines, toNix, 'id'));
+            destroy();
         }
     } else {
         const toNix = message as Message;
+        const destroy = function() {
+            changeFunc(lines => _.filter(lines, line => line.id !== toNix.id));
+        }
+
         if (options.limit?.fade) {
             toNix.markedForDelete = true;
-            setTimeout(() => {
-                changeFunc(lines => _.filter(lines, line => line.id !== toNix.id));
-            }, options.limit.fade);
+            setTimeout(destroy, options.limit.fade);
         } else {
-            changeFunc(lines => _.filter(lines, line => line.id !== toNix.id));
+            destroy();
         }
     }
 }
