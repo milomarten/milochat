@@ -1,129 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChatMessage, Client, Message, realChat } from "../src/Client";
+import { ChatMessage, Message, realChat } from "../src/Client";
 
 import { ImageBank, getAllFFZMulti, getAllTwitchBadges } from "../src/Emotes";
 import { Template } from "../src/Template";
-import { NextRouter, useRouter } from "next/router";
+import { useRouter } from "next/router";
+
+import { populatePronounDisplayMap } from "../src/Pronouns";
+import { MilochatOptions, optionsFromRouter } from "../src/Options";
 
 import Handlebars from "handlebars";
 import React from "react";
 import _ from "lodash";
 import classNames from "classnames";
-
-/** The options that can be used to configure Milochat */
-export interface MilochatOptions {
-    /** Toggles whether FFZ emotes are supported */
-    ffz?: boolean
-    blacklist?: {
-        /** If a message is from this user, do not display */
-        users?: (string | RegExp)[]
-        /** If a message includes any of these words, do not display */
-        includes?: string[]
-        /** If a message starts with any of these words, do not display */
-        prefixes?: string[]
-        /** If a message matches any of these regexes, do not display */
-        matches?: RegExp[]
-    },
-    tag?: {
-        /** Wrap anything that matches this regex with a span tag with the following class */
-        matches?: {regex: string | RegExp, attribute: string, value: string}[],
-        /** If true, any pings are wrapped in a span tag with class "ping" */
-        at?: boolean
-    },
-    /** Describes any size limits to the chat */
-    limit?: {
-        /** The type of limit */
-        flavor: Limit,
-        /** 
-         * A fade timer 
-         * If present, the chat will wait <fade> ms before deleting completely.
-         * During this time, the row will have the "deleting" class.
-         * 
-         * If absent, or zero, the node is deleted immediately.
-         * */
-        fade?: number
-    },
-    direction?: "up" | "down"
-}
-
-type Limit = ChatSizeLimit | ChatTimeLimit;
-/** A limit where chat is constrainted to a fixed number of lines */
-export type ChatSizeLimit = { type: 'count', count: number };
-/** A limit where chat will only show for a fixed number of milliseconds */
-export type ChatTimeLimit = { type: 'time', ms: number };
-
-function optionsFromRouter(router: NextRouter): [string[], MilochatOptions] {
-    let query = router.query;
-
-    function asBool(val: string | string[] | undefined): boolean {
-        if(_.isArray(val)) {
-            return _.last(val) === "true";
-        } else if (val === undefined) {
-            return false;
-        } else {
-            return val === "true";
-        }
-    }
-
-    function asString(val: string | string[] | undefined): string | undefined {
-        if(_.isArray(val)) {
-            return val[0];
-        } else if (val === undefined) {
-            return undefined;
-        } else {
-            return val;
-        }
-    }
-
-    function asStringArray(val: string | string[] | undefined): string[] {
-        if(_.isArray(val)) {
-            return val;
-        } else if (val === undefined) {
-            return [];
-        } else {
-            return [val];
-        }
-    }
-
-    function asNumber(val: string | string[] | undefined): number | undefined {
-        if(_.isArray(val)) {
-            const last = _.last(val);
-            return last ? parseInt(last) : undefined;
-        } else if (val === undefined) {
-            return undefined;
-        } else {
-            return parseInt(val);
-        }
-    }
-
-    const count = asNumber(query.count);
-    const ms = asNumber(query.time);
-    const direction = asString(query.direction);
-
-    let flavor: Limit | undefined;
-    if (count) {
-        flavor = { type: "count", count };
-    } else if (ms) {
-        flavor = { type: "time", ms }
-    }
-
-    let limit;
-    if (flavor) {
-        limit = {
-            flavor,
-            fade: asNumber(query.fade)
-        }
-    }
-
-    const opts: MilochatOptions = {
-        ...DEFAULT_OPTIONS,
-        ffz: asBool(query.ffz),
-        limit,
-        direction: direction == "up" ? "up" : "down"
-    }
-
-    return [asStringArray(query.channel), opts];
-}
+import { Theme } from "../src/Themes";
 
 function isBlacklistUser(opts: MilochatOptions, user: string): boolean {
     if (opts.blacklist?.users) {
@@ -173,42 +62,6 @@ interface Preload {
     badges: ImageBank;
 }
 
-/** Helper class which keeps track of a piece of data being loaded in asynchronously */
-class AsyncLoad<T> {
-    data?: T;
-
-    /**
-     * Create this object, possibly with some data
-     * @param data If present, this means the load is done
-     */
-    constructor(data?: T) {
-        this.data = data;
-    }
-
-    /**
-     * Check if the load is complete
-     */
-    get loaded(): boolean {
-        return this.data !== undefined;
-    }
-}
-
-/** The default template */
-const DEFAULT_TEMPLATE = `
-    ({{channel}})
-    {{> badgelist}}
-    <span class="time">{{date timestamp "H:mm"}}</span>
-    <span class="name" style="color:{{color}};">{{name}}: </span>
-    <span class="message">{{message}}</span>
-`;
-
-/** The default options */
-const DEFAULT_OPTIONS: MilochatOptions = {
-    tag: {
-        at: true
-    }
-};
-
 /** The default Handlebar compile options */
 const DEFAULT_HANDLEBAR_OPTS: CompileOptions = {
     noEscape: true
@@ -222,37 +75,35 @@ const DEFAULT_HANDLEBAR_OPTS: CompileOptions = {
 function Chat() {
     const router = useRouter();
 
-    let [badges, setBadges] = useState(new AsyncLoad<ImageBank>());
-    let [ffz, setFfz] = useState(new AsyncLoad<ImageBank>());
-    let [options, setOptions] = useState<[string[], MilochatOptions]>();
+    let [preload, setPreload] = useState<Preload>();
+    let [config, setConfig] = useState<[string[], MilochatOptions, Theme]>();
     
     useEffect(() => {
         if (router.isReady) {
-            const [channels, opts] = optionsFromRouter(router);
-            console.log("Using options:");
-            console.log(opts);
+            const [channels, opts, template] = optionsFromRouter(router);
+            console.log("Using options:", opts);
             
-            setOptions([channels, opts]);
+            setConfig([channels, opts, template]);
 
-            getAllTwitchBadges()
-                .then(bank => setBadges(new AsyncLoad(bank)));
-
-            if (channels && opts.ffz) {
-                getAllFFZMulti(channels)
-                    .then(bank => setFfz(new AsyncLoad(bank)));
-            } else {
-                setFfz(new AsyncLoad({}));
-            }
+            Promise.all([
+                getAllTwitchBadges(),
+                opts.ffz ? getAllFFZMulti(channels) : Promise.resolve({}),
+                opts.pronouns ? populatePronounDisplayMap() : Promise.resolve()
+            ]).then(a => {
+                setPreload({
+                    badges: a[0],
+                    emotes: a[1]
+                });
+            });
         }
     }, [router.isReady]);
 
-    if (badges.loaded && ffz.loaded && options !== undefined) {
-        let preload: Preload = {
-            emotes: ffz.data || {},
-            badges: badges.data || {}
-        }
+    if (preload && config) {
+        let [channels, options, theme] = config;
         return (
-            <ChatBox channels={options[0]} preload={preload} options={options[1]}/>
+            <div className={"theme-" + theme.name}>
+                <ChatBox channels={channels} preload={preload} options={options} template={theme.template}/>
+            </div>
         )
     } else {
         return (
@@ -277,7 +128,7 @@ function ChatBox(props: any) {
     let [log, setLog] = useState(new Array<Message>());
 
     useEffect(() => {
-        let chat = realChat(props.channels);
+        let chat = realChat(props.channels, options);
 
         chat.onMessage((message: ChatMessage) => {
             let raw = message.message;
@@ -313,12 +164,11 @@ function ChatBox(props: any) {
         chat.start();
 
         return () => {
-            setLog([]);
             chat.end();
         }
     }, [props.channel, preload.emotes]);
     
-    let templateFunc = useMemo(() => Handlebars.compile(template || DEFAULT_TEMPLATE, DEFAULT_HANDLEBAR_OPTS), [template]);
+    let templateFunc = useMemo(() => Handlebars.compile(template, DEFAULT_HANDLEBAR_OPTS), [template]);
 
     return (
         <>

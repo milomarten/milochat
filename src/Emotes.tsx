@@ -105,7 +105,6 @@ export function getAllTwitchBadges(): Promise<ImageBank> {
                     bank[bankKey] = image;
                 }
             }
-            console.log(bank);
             return bank;
         })
         .catch(err => {
