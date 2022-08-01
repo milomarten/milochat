@@ -1,4 +1,6 @@
-export type ImageBank = { [key: string]: Image };
+/**
+ * An abstraction of an Image, containing its name and URLs to various scaling
+ */
 export interface Image {
     name: string,
     '1x': string | undefined,
@@ -6,10 +8,29 @@ export interface Image {
     '4x': string | undefined
 }
 
+export function imageToHTML(img: Image, clazz: string): string {
+    let srcset = [];
+    if (img["1x"]) {
+        srcset.push(`${img["1x"]} 1x`);
+    }
+    if (img["2x"]) {
+        srcset.push(`${img["2x"]} 2x`);
+    }
+    if (img["4x"]) {
+        srcset.push(`${img["4x"]} 4x`);
+    }
+    return `<img class="${clazz}" src="${img["1x"]}" ${srcset.length ? `srcset="${srcset.join(",")}"` : ""} alt="${img.name}">`;
+}
+
+/**
+ * A collection of images, keyed on their ID.
+ */
+export type ImageBank = { [key: string]: Image };
+
 /**
  * Asynchronously retrieve global and channel FFZ emotes
  * @param channel The channels to pull from. If absent, only global are pulled
- * @returns An emote bank containing all the emotes
+ * @returns A bank of images containing all the emotes
  */
 export async function getAllFFZMulti(channel?: string[]): Promise<ImageBank> {
     let localPromises = channel ? channel.map(c => getChannelFFZ(c)) : [];
@@ -28,7 +49,7 @@ export async function getAllFFZMulti(channel?: string[]): Promise<ImageBank> {
 
 /**
  * Asynchrnously retrieves the global FFZ emotes 
- * @returns An emote bank containing the global FFZ emotes
+ * @returns A bank of images containing the global FFZ emotes
  */
 async function getGlobalFFZ(): Promise<ImageBank> {
     console.log("Fetching global emotes from FFZ...");
@@ -52,7 +73,7 @@ async function getChannelFFZ(channel: string): Promise<ImageBank> {
 /**
  * Asynchrously call a URL and parse the result as an Emote Bank
  * @param url The URL to call
- * @returns The Emote Bank returned from the url
+ * @returns The bank of images for use
  */
 function callFFZ(url: string): Promise<ImageBank> {
     return fetch(url)
@@ -85,6 +106,10 @@ function parseFFZResponse(data: any) : ImageBank {
     return emote_lookup;
 }
 
+/**
+ * Asynchronously retrieve all global Twitch badges
+ * @returns The bank of Twitch badge images for use
+ */
 export function getAllTwitchBadges(): Promise<ImageBank> {
     return fetch("https://badges.twitch.tv/v1/badges/global/display")
         .then(response => response.json())

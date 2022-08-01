@@ -1,12 +1,12 @@
 import _ from 'lodash';
 import tmi from 'tmi.js';
 import {v4 as uuid} from 'uuid';
-import { Image, ImageBank } from './Emotes';
+import { Image, imageToHTML } from './Emotes';
 import { MilochatOptions, Preload } from './Options';
 import { getPronouns, Pronoun } from './Pronouns';
 
 export type MessageListener<T> = (message: T) => void;
-type TwitchMap = {[key: number]: {url: string, end: number}};
+type TwitchMap = {[key: number]: {img: Image, end: number}};
 
 /** Describes a common interface for a chat client */
 export interface Client {
@@ -32,9 +32,19 @@ export interface Client {
     onClearChat(hook: () => void): void
 }
 
+/**
+ * Exposed type for all messages Milochat can provide.
+ */
 export type Message = TwitchMessage | SystemMessage;
+/**
+ * Exposed type for all messages Twitch can provide.
+ */
 export type TwitchMessage = ChatMessage | SubMessage;
 
+/**
+ * A basic message, containing common fields.
+ * Aside from the message itself, most of these fields are bookkeeping-related.
+ */
 abstract class AbstractMessage {
     /** The unique ID which represents this message */
     id: string;
@@ -75,6 +85,9 @@ abstract class AbstractMessage {
     }
 }
 
+/**
+ * A basic Twitch message, containing common fields.
+ */
 abstract class AbstractTwitchMessage extends AbstractMessage {
     /** The raw tags that come from Twitch */
     readonly tags: any;
@@ -99,10 +112,12 @@ abstract class AbstractTwitchMessage extends AbstractMessage {
     readonly partner: boolean;
     /** If true, the sender is the broadcaster of this channel */
     readonly broadcaster: boolean;
-     /**  Badges, if present */
-    badges: Image[] = [];
 
+    /**  Badges, if present */
+    badges: Image[] = [];
+    /** The chatter's pronouns, in human-readable form */
     pronouns: string = "";
+    /** The chatter's pronouns, in computer-friendly form */
     pronounId: string = "";
 
     constructor(channel: string, tags: any, message: string) {
@@ -157,9 +172,12 @@ abstract class AbstractTwitchMessage extends AbstractMessage {
         return "#" + _.padStart(h.toString(16), 6, '0');
     }
 
+    /**
+     * Resolve the badge-related helper variables.
+     * After calling this method, the badges array can be used safely.
+     * @param preload The preloaded badge images
+     */
     resolveBadges(preload: Preload) : void {
-        console.log(this);
-        
         let finalBadges = [];
         let rawBadges = this.tags["badges-raw"];
         if (_.isString(rawBadges)) {
@@ -176,7 +194,12 @@ abstract class AbstractTwitchMessage extends AbstractMessage {
                         name: `subscriber subscriber-${version} subscriber-tier-${this.subMonths?.tier || 0}`
                     };
                 } else {
-                    badge = preload.badges[badgeId + ":" + version];
+                    // All other badges should have two classes: The badge ID, and the badge ID paired with its version
+                    // This allows for more flexibility with selectors
+                    badge = {
+                        ...preload.badges[badgeId + ":" + version],
+                        name: `${badgeId} ${badgeId}-${version}`
+                    }
                 }
                 if (badge) {
                     finalBadges.push(badge);
@@ -190,6 +213,11 @@ abstract class AbstractTwitchMessage extends AbstractMessage {
         }
     }
 
+    /**
+     * Resolve the pronoun-related helper variables.
+     * After calling this method, pronouns and pronounId can be used safely.
+     * @param pronouns 
+     */
     resolvePronouns(pronouns: Pronoun | undefined) : void {
         if (pronouns) {
             this.pronounId = pronouns.id;
@@ -197,6 +225,11 @@ abstract class AbstractTwitchMessage extends AbstractMessage {
         }
     }
 
+    /**
+     * Resolves all the emotes in the message into <img> tags.
+     * @param preload The preloaded images (containing custom and FFZ emotes)
+     * @param options The options for additional configuration
+     */
     resolveEmotes(preload: Preload, options: MilochatOptions) {
         let raw = this.message;
         let tags = this.tags;
@@ -208,9 +241,8 @@ abstract class AbstractTwitchMessage extends AbstractMessage {
             if (emotesFromTwitch[idx]) {
                 let emote = emotesFromTwitch[idx];
                 let emoteName = raw.substring(idx, emote.end + 1);
-    
-                let base_url = emote.url;
-                let tag = `<img class="emote twitch" src="${base_url}/1.0" srcset="${base_url}/2.0 2x,${base_url}/3.0 4x" alt="${emoteName}">`;
+
+                let tag = imageToHTML({...emote.img, name: emoteName}, "emote twitch")
                 html += tag;
                 idx = emote.end + 1;
             } else {
@@ -226,9 +258,8 @@ abstract class AbstractTwitchMessage extends AbstractMessage {
         }
     
         for (let emote in preload.emotes) {
-            let {"1x": a, "2x": b, "4x": c} = preload.emotes[emote];
             let regex = new RegExp("\\b" + emote + "\\b", "g");
-            let tag = `<img class="emote other" src="${a || b || c || ""}" alt="${emote}">`;
+            let tag = imageToHTML(preload.emotes[emote], "emote other");
             html = html.replaceAll(regex, tag);
         }
     
@@ -253,8 +284,14 @@ abstract class AbstractTwitchMessage extends AbstractMessage {
                 let positions = raw[key];
                 for (let position of positions) {
                     let range = position.split("-");
+                    let baseUrl = `https://static-cdn.jtvnw.net/emoticons/v2/${key}/default/dark`
                     map[parseInt(range[0])] = {
-                        url: "https://static-cdn.jtvnw.net/emoticons/v2/" + key + "/default/dark",
+                        img: {
+                            name: "",
+                            "1x": `${baseUrl}/1.0`,
+                            "2x": `${baseUrl}/2.0`,
+                            "4x": `${baseUrl}/3.0`
+                        },
                         end: parseInt(range[1])
                     };
                 }
@@ -263,6 +300,11 @@ abstract class AbstractTwitchMessage extends AbstractMessage {
         return map;
     }
 
+    /**
+     * Check if this message is blacklisted with respect to the options
+     * @param opts The options to check against
+     * @returns True, if this message is blacklisted and should not be displayed.
+     */
     isBlacklist(opts: MilochatOptions): boolean {
         return this.isBlacklistUser(opts, this.name) || this.isBlacklistMessage(opts, this.message);
     }

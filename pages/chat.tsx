@@ -134,6 +134,14 @@ function ChatBox(props: any) {
     )
 }
 
+/**
+ * Delete a message, taking options into consideration.
+ * If a fade option is present, the messages will be marked for deletion, and then removed once the alloted time is passed
+ * If no fade option is present, the messages are deleted instantly
+ * @param message The message, or messages, to delete
+ * @param changeFunc The React Function to use to perform the actual deletion
+ * @param options The Milochat options to use
+ */
 function registerForDelete(message: Message | Message[], changeFunc: React.Dispatch<React.SetStateAction<Message[]>>, options: MilochatOptions) {
     if (_.isArray(message)) {
         const toNix = message as Message[];

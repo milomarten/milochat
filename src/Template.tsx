@@ -2,6 +2,7 @@ import Handlebars, { HelperOptions } from "handlebars";
 import _ from "lodash";
 import utils from 'handlebars-utils';
 import { ChatMessage } from "./Client";
+import { imageToHTML } from "./Emotes";
 
 //Allows usage of the date helper, which can format chat message timestamps
 Handlebars.registerHelper("date", require("helper-date"));
@@ -10,7 +11,7 @@ Handlebars.registerPartial("badgelist", function(context: ChatMessage) {
     return context.badges.map(badge => {
         let url = badge["1x"] || badge["2x"] || badge["4x"];
         if (url) {
-            return `<img src="${url}" class="badge ${badge.name}" alt=${badge.name}/>`
+            return imageToHTML(badge, `badge ${badge.name}`);
         } else {
             return "";
         }
