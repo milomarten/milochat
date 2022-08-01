@@ -1,7 +1,21 @@
-import Handlebars from "handlebars";
+import Handlebars, { HelperOptions } from "handlebars";
+import _ from "lodash";
+import utils from 'handlebars-utils';
+import { ChatMessage } from "./Client";
 
 //Allows usage of the date helper, which can format chat message timestamps
 Handlebars.registerHelper("date", require("helper-date"));
+// Renders a list of badges
+Handlebars.registerPartial("badgelist", function(context: ChatMessage) {
+    return context.badges.map(badge => {
+        let url = badge["1x"] || badge["2x"] || badge["4x"];
+        if (url) {
+            return `<img src="${url}" class="badge ${badge.name}" alt=${badge.name}/>`
+        } else {
+            return "";
+        }
+    }).join("");
+})
 
 /**
  * Template tag. When provided a template function and data, this resolves

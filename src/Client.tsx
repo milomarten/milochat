@@ -1,6 +1,7 @@
 import _ from 'lodash';
 import tmi from 'tmi.js';
 import {v4 as uuid} from 'uuid';
+import { Image, ImageBank } from './Emotes';
 
 export type MessageListener<T> = (message: T) => void;
 
@@ -70,6 +71,8 @@ export class ChatMessage {
     emoteOnly: boolean;
     /** If true, this message contains only one emote */
     isOneEmoteOnly: boolean;
+    /**  Badges, if present */
+    badges: Image[];
 
     constructor(channel: string, tags: any, message: string) {
         this.tags = tags;
@@ -89,6 +92,7 @@ export class ChatMessage {
         this.timestamp = parseInt(tags['tmi-sent-ts']);
         this.emoteOnly = ChatMessage.isEmoteOnly(message);
         this.isOneEmoteOnly = this.emoteOnly && ChatMessage.isOneEmoteOnly(message);
+        this.badges = [];
 
         if (this.sub) {
             let badge = parseInt(tags.badges.subscriber);
@@ -114,6 +118,25 @@ export class ChatMessage {
         this.message = message;
         this.emoteOnly = ChatMessage.isEmoteOnly(message);
         this.isOneEmoteOnly = this.emoteOnly && ChatMessage.isOneEmoteOnly(message);
+    }
+
+    setBadges(bank: ImageBank) : void {
+        let finalBadges = [];
+        let rawBadges = this.tags["badges-raw"];
+        if (_.isString(rawBadges)) {
+            let rawIds = rawBadges.split(",");
+            for (let id of rawIds) {
+                let [badgeId, version] = id.split("/");
+                let badge = bank[badgeId + ":" + version];
+                if (badge) {
+                    finalBadges.push(badge);
+                }
+            }
+            this.badges = finalBadges;
+        } else {
+            this.badges = [];
+        }
+        console.log(this.badges);
     }
 
     private static isEmoteOnly(msg: string): boolean {

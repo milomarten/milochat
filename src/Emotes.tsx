@@ -1,11 +1,17 @@
-export type EmoteBank = { [key: string]: string[] };
+export type ImageBank = { [key: string]: Image };
+export interface Image {
+    name: string,
+    '1x': string | undefined,
+    '2x': string | undefined,
+    '4x': string | undefined
+}
 
 /**
  * Asynchronously retrieve global and channel FFZ emotes
  * @param channel The channels to pull from. If absent, only global are pulled
  * @returns An emote bank containing all the emotes
  */
-export async function getAllFFZMulti(channel?: string[]): Promise<EmoteBank> {
+export async function getAllFFZMulti(channel?: string[]): Promise<ImageBank> {
     let localPromises = channel ? channel.map(c => getChannelFFZ(c)) : [];
     let promises = [getGlobalFFZ(), ...localPromises];
 
@@ -24,7 +30,7 @@ export async function getAllFFZMulti(channel?: string[]): Promise<EmoteBank> {
  * Asynchrnously retrieves the global FFZ emotes 
  * @returns An emote bank containing the global FFZ emotes
  */
-async function getGlobalFFZ(): Promise<EmoteBank> {
+async function getGlobalFFZ(): Promise<ImageBank> {
     console.log("Fetching global emotes from FFZ...");
     const data = await callFFZ("https://api.frankerfacez.com/v1/set/global");
     console.log("Loaded %d global emotes from FFZ", Object.keys(data).length);
@@ -36,7 +42,7 @@ async function getGlobalFFZ(): Promise<EmoteBank> {
  * @param channel The channel name
  * @returns An emote bank containing the FFZ emotes for that channel
  */
-async function getChannelFFZ(channel: string): Promise<EmoteBank> {
+async function getChannelFFZ(channel: string): Promise<ImageBank> {
     console.log(`Fetching emotes for channel ${channel} from FFZ...`);
     const data = await callFFZ("https://api.frankerfacez.com/v1/room/" + channel);
     console.log(`Loaded ${Object.keys(data).length} emotes for channel ${channel}`);
@@ -48,7 +54,7 @@ async function getChannelFFZ(channel: string): Promise<EmoteBank> {
  * @param url The URL to call
  * @returns The Emote Bank returned from the url
  */
-function callFFZ(url: string): Promise<EmoteBank> {
+function callFFZ(url: string): Promise<ImageBank> {
     return fetch(url)
         .then(response => response.json())
         .then(data => {
@@ -60,20 +66,50 @@ function callFFZ(url: string): Promise<EmoteBank> {
         })
 }
 
-function parseFFZResponse(data: any) : EmoteBank {
+function parseFFZResponse(data: any) : ImageBank {
     let sets = data.sets;
-    let emote_lookup: EmoteBank = {};
+    let emote_lookup: ImageBank = {};
     for (let set_key in sets) {
         for (let emote of sets[set_key].emoticons) {
-            let urls = [];
-            if (emote.urls["1"]) { urls.push("https:" + emote.urls["1"]); }
-            if (emote.urls["2"]) { urls.push("https:" + emote.urls["2"]); }
-            if (emote.urls["4"]) { urls.push("https:" + emote.urls["4"]); }
 
-            if (urls.length) {
-                emote_lookup[emote.name] = urls;
+            let urls: Image = {
+                name: emote.name,
+                "1x": emote.urls["1"],
+                "2x": emote.urls["2"],
+                "4x": emote.urls["4"]
             }
+
+            emote_lookup[emote.name] = urls;
         }
     }
     return emote_lookup;
+}
+
+export function getAllTwitchBadges(): Promise<ImageBank> {
+    return fetch("https://badges.twitch.tv/v1/badges/global/display")
+        .then(response => response.json())
+        .then(data => {
+            let set = data.badge_sets;
+            let bank: ImageBank = {};
+            for (let key of Object.keys(set)) {
+                let emoteData = set[key];
+                for (let version of Object.keys(emoteData.versions)) {
+                    let emoteDataForVersion = emoteData.versions[version];
+                    let image: Image = {
+                        name: key,
+                        "1x": emoteDataForVersion.image_url_1x,
+                        "2x": emoteDataForVersion.image_url_2x,
+                        "4x": emoteDataForVersion.image_url_4x
+                    };
+                    let bankKey = `${key}:${version}`;
+                    bank[bankKey] = image;
+                }
+            }
+            console.log(bank);
+            return bank;
+        })
+        .catch(err => {
+            console.error(err);
+            return {}
+        })
 }

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChatMessage, Client, Message, realChat } from "../src/Client";
 
-import { EmoteBank, getAllFFZMulti } from "../src/Emotes";
+import { ImageBank, getAllFFZMulti, getAllTwitchBadges } from "../src/Emotes";
 import { Template } from "../src/Template";
 import { NextRouter, useRouter } from "next/router";
 
@@ -169,7 +169,8 @@ function isBlacklistMessage(opts: MilochatOptions, message: string): boolean {
 
 /** Contains an assortment of data loaded in before chat is started */
 interface Preload {
-    emotes: EmoteBank;
+    emotes: ImageBank;
+    badges: ImageBank;
 }
 
 /** Helper class which keeps track of a piece of data being loaded in asynchronously */
@@ -195,6 +196,7 @@ class AsyncLoad<T> {
 /** The default template */
 const DEFAULT_TEMPLATE = `
     ({{channel}})
+    {{> badgelist}}
     <span class="time">{{date timestamp "H:mm"}}</span>
     <span class="name" style="color:{{color}};">{{name}}: </span>
     <span class="message">{{message}}</span>
@@ -220,7 +222,8 @@ const DEFAULT_HANDLEBAR_OPTS: CompileOptions = {
 function Chat() {
     const router = useRouter();
 
-    let [ffz, setFfz] = useState(new AsyncLoad<EmoteBank>());
+    let [badges, setBadges] = useState(new AsyncLoad<ImageBank>());
+    let [ffz, setFfz] = useState(new AsyncLoad<ImageBank>());
     let [options, setOptions] = useState<[string[], MilochatOptions]>();
     
     useEffect(() => {
@@ -231,6 +234,9 @@ function Chat() {
             
             setOptions([channels, opts]);
 
+            getAllTwitchBadges()
+                .then(bank => setBadges(new AsyncLoad(bank)));
+
             if (channels && opts.ffz) {
                 getAllFFZMulti(channels)
                     .then(bank => setFfz(new AsyncLoad(bank)));
@@ -240,9 +246,10 @@ function Chat() {
         }
     }, [router.isReady]);
 
-    if (ffz.loaded && options !== undefined) {
+    if (badges.loaded && ffz.loaded && options !== undefined) {
         let preload: Preload = {
-            emotes: ffz.data || {}
+            emotes: ffz.data || {},
+            badges: badges.data || {}
         }
         return (
             <ChatBox channels={options[0]} preload={preload} options={options[1]}/>
@@ -276,6 +283,7 @@ function ChatBox(props: any) {
             let raw = message.message;
             if (!isBlacklistUser(options, message.name) && !isBlacklistMessage(options, raw)) {
                 message.setMessage(htmlifyMessage(raw, message.tags, preload, options));
+                message.setBadges(preload.badges);
 
                 if (options.limit?.flavor.type === "time") {
                     setTimeout(() => {
@@ -354,9 +362,9 @@ function htmlifyMessage(raw: string, tags: any, preload: Preload, options: Miloc
     }
 
     for (let emote in preload.emotes) {
-        let [prime] = preload.emotes[emote];
+        let {"1x": a, "2x": b, "4x": c} = preload.emotes[emote];
         let regex = new RegExp("\\b" + emote + "\\b", "g");
-        let tag = `<img class="emote other" src="${prime}" alt="${emote}">`;
+        let tag = `<img class="emote other" src="${a || b || c || ""}" alt="${emote}">`;
         html = html.replaceAll(regex, tag);
     }
 
