@@ -24,7 +24,7 @@ export interface Client {
      * Register some logic to perform when a message is received
      * @param hook The code that should be executed on message
      */
-    onMessage(hook: MessageListener<TwitchMessage>): void,
+    onMessage(hook: MessageListener<ChatMessage>): void,
     /**
      * Register some logic to perform when the clear chat command is received
      * @param hook The code that should be executed on clear
@@ -124,13 +124,13 @@ abstract class AbstractTwitchMessage extends AbstractMessage {
         super(message, tags.id, parseInt(tags['tmi-sent-ts']));
         this.tags = tags;
         this.channel = _.trimStart(channel, "#");
-        this.name = tags['display-name'];
+        this.name = tags['display-name'] || tags.username;
         this.color = tags.color || AbstractTwitchMessage.createColor(this.name);
         this.mod = tags.mod;
         this.sub = tags.subscriber;
         this.turbo = tags.turbo;
-        this.partner = tags.badges && tags.badges.partner !== undefined;
-        this.broadcaster = tags.badges && tags.badges.broadcaster !== undefined;
+        this.partner = tags.badges?.partner !== undefined;
+        this.broadcaster = tags.badges?.broadcaster !== undefined;
 
         if (this.sub) {
             let badge = parseInt(tags.badges.subscriber);
@@ -356,10 +356,27 @@ abstract class AbstractTwitchMessage extends AbstractMessage {
 export class ChatMessage extends AbstractTwitchMessage {
     /** The type of message */
     readonly type: "chat" | "action"; // Note: This could also be whisper, but since we are anonymous, there is no chance.
+    /** If true, this is a highlighted message */
+    readonly highlighted: boolean;
+    /** If present, this is a reply */
+    readonly reply: undefined | {
+        id: string,
+        name: string,
+        body: string
+    }
 
     constructor(channel: string, tags: any, message: string) {
         super(channel, tags, message);
         this.type = tags['message-type'];
+        this.highlighted = tags['msg-id'] === "highlighted-message";
+
+        if (tags['reply-parent-msg-id']) {
+            this.reply = {
+                id: tags['reply-parent-msg-id'],
+                name: tags['reply-parent-display-name'] || tags['reply-parent-user-login'],
+                body: tags['reply-parent-msg-body']
+            }
+        }
     }
 }
 
@@ -396,9 +413,11 @@ export function realChat(channels: string[], options: MilochatOptions): Client {
             console.log("Starting Client");
             client.connect().catch(console.error);
         },
-        onMessage: function(f: MessageListener<ChatMessage | SubMessage>) {
-            client.on('message', function(channel: string, tags: any, message: string) {
+        onMessage: function(f: MessageListener<ChatMessage>) {
+            client.on('message', function(channel: string, tags: any, message: string) {                
                 let obj = new ChatMessage(channel, tags, message);
+                console.log(obj);
+                
                 if (!obj.isBlacklist(options)) {
                     if (options.pronouns) {
                         getPronouns(obj.name)

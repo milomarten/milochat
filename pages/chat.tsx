@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Message, realChat, TwitchMessage } from "../src/Client";
+import { ChatMessage, Message, realChat, TwitchMessage } from "../src/Client";
 
 import { getAllFFZMulti, getAllTwitchBadges } from "../src/Emotes";
 import { Template } from "../src/Template";
@@ -107,7 +107,7 @@ function ChatBox(props: any) {
     useEffect(() => {
         let chat = realChat(props.channels, options);
 
-        chat.onMessage((message: TwitchMessage) => {
+        chat.onMessage((message: ChatMessage) => {
             message.resolveEmotes(preload, options);
             message.resolveBadges(preload);
 
