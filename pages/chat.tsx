@@ -20,14 +20,11 @@ const DEFAULT_HANDLEBAR_OPTS: CompileOptions = {
 }
 
 /**
- * The root container which begins the preload and starts up chat when complete
- * No properties are used. Channels are pulled as query params; everything else
- * uses defaults for now.
+ * A wrapper around the Chat element which pulls configuration from query parameters.
  */
-function Chat() {
+function ChatWrapper() {
     const router = useRouter();
 
-    let [preload, setPreload] = useState<Preload>();
     let [config, setConfig] = useState<[string[], MilochatOptions, Theme]>();
     
     useEffect(() => {
@@ -36,22 +33,49 @@ function Chat() {
             console.log("Using options:", opts);
             
             setConfig([channels, opts, template]);
-
-            Promise.all([
-                getAllTwitchBadges(),
-                opts.ffz ? getAllFFZMulti(channels) : Promise.resolve({}),
-                opts.pronouns ? populatePronounDisplayMap() : Promise.resolve()
-            ]).then(a => {
-                setPreload({
-                    badges: a[0],
-                    emotes: a[1]
-                });
-            });
         }
     }, [router.isReady]);
 
-    if (preload && config) {
+    if (config) {
         let [channels, options, theme] = config;
+        return (
+            <Chat channels={channels} options={options} theme={theme}/>
+        )
+    } else {
+        return (
+            <div>Loading...</div>
+        )
+    }
+}
+
+/**
+ * A wrapper around the Chatbox element which performs initial loading of assets.
+ * Props:
+ * * channels: A list of channels to connect to
+ * * theme: A theme (potentially custom) to use for display into HTML
+ * * options: Milochat options for configuration
+ */
+export function Chat(props: any) {
+    const channels = props.channels as string[];
+    const options = props.options as MilochatOptions;
+    const theme = props.theme as Theme;
+
+    let [preload, setPreload] = useState<Preload>();
+    
+    useEffect(() => {
+        Promise.all([
+            getAllTwitchBadges(),
+            options.ffz ? getAllFFZMulti(channels) : Promise.resolve({}),
+            options.pronouns ? populatePronounDisplayMap() : Promise.resolve()
+        ]).then(a => {
+            setPreload({
+                badges: a[0],
+                emotes: a[1]
+            });
+        });
+    }, []);
+
+    if (preload) {
         return (
             <div className={"theme-" + theme.name}>
                 <ChatBox channels={channels} preload={preload} options={options} template={theme.template}/>
@@ -67,6 +91,7 @@ function Chat() {
 /**
  * The box which actually displays chat
  * Props:
+ * * channels: A list of channels to connect to
  * * template: A Handlebars-friendly string to be resolved into HTML
  * * preload: Values pulled in from the loading step.
  * * options: Milochat options for configuration
@@ -115,7 +140,7 @@ function ChatBox(props: any) {
         return () => {
             chat.end();
         }
-    }, [props.channel, preload.emotes]);
+    }, [props.channel, preload]);
     
     let templateFunc = useMemo(() => Handlebars.compile(template, DEFAULT_HANDLEBAR_OPTS), [template]);
 
@@ -170,4 +195,4 @@ function registerForDelete(message: Message | Message[], changeFunc: React.Dispa
     }
 }
 
-export default Chat;
+export default ChatWrapper;
