@@ -285,17 +285,6 @@ export abstract class AbstractTwitchMessage extends AbstractMessage {
             html = html.replaceAll(regex, tag);
         }
     
-        if (options.tag?.at) {
-            const AT_REGEX = /(@\S+)/g;
-            html = html.replaceAll(AT_REGEX, '<span class="ping">$1</span>');
-        }
-    
-        if (options.tag?.matches) {
-            for (let test of options.tag.matches) {
-                html = html.replaceAll(test.regex, `<span ${test.attribute}="${test.value}">$&</span>`);
-            }
-        }
-    
         this.setMessage(html);
     }
     
@@ -449,7 +438,6 @@ class RealChat implements Client {
     onMessage(hook: MessageListener<ChatMessage>): void {
         this.client.on('message', (channel: string, tags: any, message: string) => {                
             let obj = new ChatMessage(channel, tags, message);
-            // console.log(obj);
             
             if (!obj.isBlacklist(this.options)) {
                 if (this.options.pronouns) {
@@ -484,9 +472,7 @@ class RealChat implements Client {
     }
 
     private registerSystemHooks(): void {
-        // this.client.on("raw_message", (cloned, message) => {
-        //     console.log(cloned);
-        // });
+
     }   
 
     private triggerSystemMessage(msg: string): void {

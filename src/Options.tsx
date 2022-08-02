@@ -10,17 +10,12 @@ export interface Preload {
     badges: ImageBank;
 }
 
-/** The default options */
-const DEFAULT_OPTIONS: MilochatOptions = {
-    tag: {
-        at: true
-    }
-};
-
 /** The options that can be used to configure Milochat */
 export interface MilochatOptions {
     /** Toggles whether FFZ emotes are supported */
-    ffz?: boolean
+    ffz?: boolean,
+    /** Toggles whether Pronouns are supported, via pronouns.alejo.io */
+    pronouns?: boolean,
     blacklist?: {
         /** If a message is from this user, do not display */
         users?: (string | RegExp)[]
@@ -30,12 +25,6 @@ export interface MilochatOptions {
         prefixes?: string[]
         /** If a message matches any of these regexes, do not display */
         matches?: RegExp[]
-    },
-    tag?: {
-        /** Wrap anything that matches this regex with a span tag with the following class */
-        matches?: {regex: string | RegExp, attribute: string, value: string}[],
-        /** If true, any pings are wrapped in a span tag with class "ping" */
-        at?: boolean
     },
     /** Describes any size limits to the chat */
     limit?: {
@@ -51,7 +40,6 @@ export interface MilochatOptions {
         fade?: number
     },
     direction?: "up" | "down",
-    pronouns?: boolean
 }
 
 type Limit = ChatSizeLimit | ChatTimeLimit;
@@ -84,7 +72,6 @@ export function optionsFromRouter(router: NextRouter): [string[], MilochatOption
     }
 
     const opts: MilochatOptions = {
-        ...DEFAULT_OPTIONS,
         ffz: asBool(query.ffz),
         limit,
         direction: direction == "up" ? "up" : "down",
