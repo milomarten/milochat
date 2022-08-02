@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AbstractTwitchMessage, ChatMessage, Message, realChat, SystemMessage, TwitchMessage } from "../src/Client";
+import { AbstractTwitchMessage, ChatMessage, Message, realChat, SubMessage, SystemMessage, TwitchMessage } from "../src/Client";
 
 import { getAllFFZMulti, getAllTwitchBadges } from "../src/Emotes";
 import { Template } from "../src/Template";
@@ -138,6 +138,13 @@ function ChatBox(props: any) {
         chat.onSystemMessage((message: SystemMessage) => {
             addMessageToLog(message);
         });
+
+        chat.onSubscribe((message: SubMessage) => {
+            message.resolveEmotes(preload, options);
+            message.resolveBadges(preload);
+
+            addMessageToLog(message);
+        })
 
         chat.onMessageDelete((id: string) => {
             setLog(lines => _.filter(lines, (line) => line.id !== id));

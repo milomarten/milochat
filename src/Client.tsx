@@ -14,22 +14,22 @@ export interface Client {
      * Start the client 
      * Perform initial setup and begin receiving messages
      */
-    start(): void,
+    start(): void
     /**
      * Stop the client
      * Shut down all resources and stop receiving messages
      */
-    end(): void,
+    end(): void
     /**
      * Register some logic to perform when a message is received
      * @param hook The code that should be executed on message
      */
-    onMessage(hook: MessageListener<ChatMessage>): void,
+    onMessage(hook: MessageListener<ChatMessage>): void
     /**
      * Register some logic to perform when a system message is received
      * @param hook The code that should be executed on message
      */
-    onSystemMessage(hook: MessageListener<SystemMessage>): void,
+    onSystemMessage(hook: MessageListener<SystemMessage>): void
     /**
      * Register some logic to perform when a message is deleted
      * @param hook The code that should be executed on message delete
@@ -40,6 +40,11 @@ export interface Client {
      * @param hook The code that should be executed on ban
      */
     onUserBan(hook: (username: string, channel: string) => void): void
+    /**
+     * Register some logic to perform when a user subscribes
+     * @param hook The code that should be executed on subscription
+     */
+    onSubscribe(hook: MessageListener<SubMessage>): void
 }
 
 /**
@@ -50,12 +55,18 @@ export type Message = TwitchMessage | SystemMessage;
  * Exposed type for all messages Twitch can provide.
  */
 export type TwitchMessage = ChatMessage | SubMessage;
+/**
+ * Different types of Tags that are supported here
+ */
+export type Tags = tmi.ChatUserstate | tmi.SubUserstate;
 
 /**
  * A basic message, containing common fields.
  * Aside from the message itself, most of these fields are bookkeeping-related.
  */
 export abstract class AbstractMessage {
+    /** A string which represents the type of message */
+    abstract type: string;
     /** The unique ID which represents this message */
     id: string;
     /** The message received from Twitch, HTML formatted */
@@ -138,23 +149,23 @@ export abstract class AbstractTwitchMessage extends AbstractMessage {
     /** The chatter's pronouns, in computer-friendly form */
     pronounId: string = "";
 
-    constructor(channel: string, tags: any, message: string) {
-        super(message, tags.id, parseInt(tags['tmi-sent-ts']));
-        this.userId = tags['user-id'];
+    constructor(channel: string, tags: Tags, message: string) {
+        super(message || "", tags.id, tags['tmi-sent-ts'] ? parseInt(tags['tmi-sent-ts']) : undefined);
+        this.userId = tags['user-id'] || "";
         this.tags = tags;
         this.channel = _.trimStart(channel, "#");
         this.name = tags['display-name'] || tags.username;
         this.color = tags.color || AbstractTwitchMessage.createColor(this.name);
-        this.mod = tags.mod;
-        this.sub = tags.subscriber;
-        this.turbo = tags.turbo;
+        this.mod = tags.mod || false;
+        this.sub = tags.subscriber || false;
+        this.turbo = tags.turbo || false;
         this.partner = tags.badges?.partner !== undefined;
         this.broadcaster = tags.badges?.broadcaster !== undefined;
         this.staff = tags['user-type'] === "staff";
         this.admin = tags['user-type'] === "admin";
         this.globalMod = tags['user-type'] === "global_mod";
 
-        if (this.sub) {
+        if (this.sub && tags.badges?.subscriber !== undefined) {
             let badge = parseInt(tags.badges.subscriber);
             let tier;
             if (badge >= 3000) {
@@ -169,7 +180,7 @@ export abstract class AbstractTwitchMessage extends AbstractMessage {
             this.subMonths = {
                 badge,
                 tier,
-                total: parseInt(tags['badge-info'].subscriber)
+                total: parseInt(tags['badge-info']?.subscriber || "0")
             }
         }
     }
@@ -376,9 +387,9 @@ export class ChatMessage extends AbstractTwitchMessage {
         body: string
     }
 
-    constructor(channel: string, tags: any, message: string) {
+    constructor(channel: string, tags: tmi.ChatUserstate, message: string) {
         super(channel, tags, message);
-        this.type = tags['message-type'];
+        this.type = tags['message-type'] === "action" ? "action" : "chat";
         this.highlighted = tags['msg-id'] === "highlighted-message";
 
         if (tags['reply-parent-msg-id']) {
@@ -393,10 +404,54 @@ export class ChatMessage extends AbstractTwitchMessage {
 
 /** Represents a sub message */
 export class SubMessage extends AbstractTwitchMessage {
-    readonly type = "sub";
+    /**
+     * The type of message this is
+     */
+    readonly type: "sub" | "resub";
+    /** 
+     * A string that describes the subscription
+     * In most cases, this is a well-formatted string describing the subscription,
+     * and should be used in templates for subscriptions. 
+     * For a first-time sub:
+     * For a resub: <name> subscribed <with Prime | at Tier 1|2|3>. They've subscribed for <streak> months!
+     */
+    readonly subText: string;
+    /**
+     * If true, this is a prime subscription
+     */
+    readonly prime: boolean;
+    /**
+     * The tier level of subscription: 1, 2, or 3
+     */
+    readonly level: "prime" | 1 | 2 | 3;
+    /**
+     * If true, this is a resub
+     */
+    readonly resub: boolean;
+    /**
+     * The total number of months subscribed for
+     */
+    readonly cumulative: number | undefined;
 
-    constructor(channel: string, tags: any, message: string) {
+    constructor(channel: string, tags: tmi.SubUserstate, message: string) {
         super(channel, tags, message);
+
+        this.type = tags['message-type'] || "sub";
+        this.subText = tags['system-msg'] || "";
+
+        switch (tags['msg-param-sub-plan']) {
+            case "Prime": this.prime = true; this.level = "prime"; break;
+            case "2000": this.prime = false; this.level = 2; break;
+            case "3000": this.prime = false; this.level = 3; break;
+            default: this.prime = false; this.level = 1; break;
+        }
+
+        if (tags['msg-param-cumulative-months']) {
+            this.resub = true
+            this.cumulative = parseInt(tags['msg-param-cumulative-months'] as string)
+        } else {
+            this.resub = false;
+        }
     }
 }
 
@@ -436,25 +491,58 @@ class RealChat implements Client {
     }
 
     onMessage(hook: MessageListener<ChatMessage>): void {
-        this.client.on('message', (channel: string, tags: any, message: string) => {                
+        let callback = this.augment(hook);
+        this.client.on('message', (channel: string, tags: tmi.ChatUserstate, message: string) => {                
             let obj = new ChatMessage(channel, tags, message);
-            
-            if (!obj.isBlacklist(this.options)) {
-                if (this.options.pronouns) {
-                    getPronouns(obj.name)
-                        .then(p => {
-                            obj.resolvePronouns(p);
-                            hook(obj);
-                        });
-                } else {
-                    hook(obj);
-                }
-            }
+            callback(obj);
         });
     }
 
     onSystemMessage(hook: MessageListener<SystemMessage>): void {
         this.systemMessageHooks.push(hook);
+    }
+
+    onSubscribe(hook: MessageListener<SubMessage>): void {
+        let callback = this.augment(hook);
+
+        // First subscription to a channel
+        this.client.on("subscription", (channel: string, username: string, methods: tmi.SubMethods, message: string, userstate: tmi.SubUserstate) => {
+            let m = new SubMessage(channel, userstate, message || "");
+            console.log("sub", m);
+            callback(m);
+        });
+
+        // Resubscribe to a channel
+        this.client.on("resub", (channel: string, username: string, months: number, message: string, userstate: tmi.SubUserstate, methods: tmi.SubMethods) => {
+            let m = new SubMessage(channel, userstate, message || "");
+            console.log("resub", m);
+            callback(m);
+        });
+
+        // Still not sure the best way to handle the below four, since they are messages, but only ever static text.
+        // As such, they may interfere with a clean template.
+
+        // Someone gifts a sub to random community members
+        // Note that this corresponds to the "<name> is giving <number> subs to the community!" message.
+        // Each individual sub will follow, as a subgift type
+        this.client.on("submysterygift", (channel: string, username: string, numbOfSubs: number, methods: tmi.SubMethods, userstate: tmi.SubMysteryGiftUserstate) => {
+            console.log("anonsub", channel, username, numbOfSubs, methods, userstate);
+        });
+
+        // Gifted a sub from a concrete person
+        this.client.on("subgift", (channel: string, username: string, streakMonths: number, recipient: string, methods: tmi.SubMethods, userstate: tmi.SubGiftUserstate) => {
+            console.log("subgift", channel, username, streakMonths, recipient, methods, userstate);
+        });
+
+        // Subscribed, having previously been gifted a sub from a concrete person
+        this.client.on("giftpaidupgrade", (channel: string, username: string, sender: string, userstate: tmi.SubGiftUpgradeUserstate) => {
+            console.log("upgrade", channel, username, sender, userstate);
+        }); 
+
+        // Subscribed, having previously been gifted an anonymous sub
+        this.client.on("anongiftpaidupgrade", (channel: string, username: string, userstate: tmi.AnonSubGiftUpgradeUserstate) => {
+            console.log("anonupgrade", channel, username, userstate);
+        });
     }
 
     onMessageDelete(hook: (messageId: string) => void): void {
@@ -466,7 +554,11 @@ class RealChat implements Client {
     }
 
     onUserBan(hook: (username: string, channel: string) => void): void {
-        this.client.on("ban", (channel: string, username: string, reason: string) => {
+        this.client.on("ban", (channel: string, username: string) => {
+            hook(username, channel);
+        });
+
+        this.client.on("timeout", (channel: string, username: string) => {
             hook(username, channel);
         });
     }
@@ -478,6 +570,20 @@ class RealChat implements Client {
     private triggerSystemMessage(msg: string): void {
         let toTrigger = new SystemMessage(msg);
         this.systemMessageHooks.forEach(hook => hook(toTrigger));
+    }
+
+    private augment<T extends TwitchMessage>(func: MessageListener<T>): MessageListener<T> {
+        return (message) => {
+            if (this.options.pronouns) {
+                getPronouns(message.name)
+                    .then(p => {
+                        message.resolvePronouns(p);
+                        func(message)
+                    });
+            } else {
+                func(message);
+            }
+        }
     }
 }
 
