@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChatMessage, Message, realChat, TwitchMessage } from "../src/Client";
+import { AbstractTwitchMessage, ChatMessage, Message, realChat, SystemMessage, TwitchMessage } from "../src/Client";
 
 import { getAllFFZMulti, getAllTwitchBadges } from "../src/Emotes";
 import { Template } from "../src/Template";
@@ -104,6 +104,27 @@ function ChatBox(props: any) {
     let options = props.options as MilochatOptions;
     let [log, setLog] = useState(new Array<Message>());
 
+    function addMessageToLog(message: Message): void {
+        if (options.limit?.flavor.type === "time") {
+            setTimeout(() => {
+                registerForDelete(message, setLog, options);
+            }, options.limit.flavor.ms);
+        }
+
+        setLog(l => {
+            let concat = [...l, message];
+            if (options.limit?.flavor.type === "count") {
+                let max = options.limit.flavor.count;
+                if (concat.length > max) {
+                    let toNix = _.take(concat, concat.length - max);
+                    registerForDelete(toNix, setLog, options);
+                }
+            }
+
+            return concat;
+        });
+    }
+
     useEffect(() => {
         let chat = realChat(props.channels, options);
 
@@ -111,29 +132,26 @@ function ChatBox(props: any) {
             message.resolveEmotes(preload, options);
             message.resolveBadges(preload);
 
-            if (options.limit?.flavor.type === "time") {
-                setTimeout(() => {
-                    registerForDelete(message, setLog, options);
-                }, options.limit.flavor.ms);
-            }
+            addMessageToLog(message);
+        });
 
-            setLog(l => {
-                let concat = [...l, message];
-                if (options.limit?.flavor.type === "count") {
-                    let max = options.limit.flavor.count;
-                    if (concat.length > max) {
-                        let toNix = _.take(concat, concat.length - max);
-                        registerForDelete(toNix, setLog, options);
-                    }
+        chat.onSystemMessage((message: SystemMessage) => {
+            addMessageToLog(message);
+        });
+
+        chat.onMessageDelete((id: string) => {
+            setLog(lines => _.filter(lines, (line) => line.id !== id));
+        });
+
+        chat.onUserBan((username: string, channel: string) => {
+            setLog(lines => _.filter(lines, (line) => {
+                if (line instanceof AbstractTwitchMessage) {
+                    return line.tags.username !== username && line.channel !== channel
+                } else {
+                    return true;
                 }
-
-                return concat;
-            });
-        });
-
-        chat.onClearChat(() => {
-            setLog([]);
-        });
+            }))
+        })
 
         chat.start();
 

@@ -26,10 +26,20 @@ export interface Client {
      */
     onMessage(hook: MessageListener<ChatMessage>): void,
     /**
-     * Register some logic to perform when the clear chat command is received
-     * @param hook The code that should be executed on clear
+     * Register some logic to perform when a system message is received
+     * @param hook The code that should be executed on message
      */
-    onClearChat(hook: () => void): void
+    onSystemMessage(hook: MessageListener<SystemMessage>): void,
+    /**
+     * Register some logic to perform when a message is deleted
+     * @param hook The code that should be executed on message delete
+     */
+    onMessageDelete(hook: (messageId: string) => void): void
+    /**
+     * Register some logic to perform when a user is banned
+     * @param hook The code that should be executed on ban
+     */
+    onUserBan(hook: (username: string, channel: string) => void): void
 }
 
 /**
@@ -45,7 +55,7 @@ export type TwitchMessage = ChatMessage | SubMessage;
  * A basic message, containing common fields.
  * Aside from the message itself, most of these fields are bookkeeping-related.
  */
-abstract class AbstractMessage {
+export abstract class AbstractMessage {
     /** The unique ID which represents this message */
     id: string;
     /** The message received from Twitch, HTML formatted */
@@ -88,11 +98,13 @@ abstract class AbstractMessage {
 /**
  * A basic Twitch message, containing common fields.
  */
-abstract class AbstractTwitchMessage extends AbstractMessage {
+export abstract class AbstractTwitchMessage extends AbstractMessage {
     /** The raw tags that come from Twitch */
     readonly tags: any;
     /** The chatter's username */
     readonly name: string;
+    /** The chatter's user ID */
+    readonly userId: string;
     /** The channel this message originated from */
     readonly channel: string;
     /** 
@@ -112,6 +124,12 @@ abstract class AbstractTwitchMessage extends AbstractMessage {
     readonly partner: boolean;
     /** If true, the sender is the broadcaster of this channel */
     readonly broadcaster: boolean;
+    /** If true, the sender is Twitch staff */
+    readonly staff: boolean;
+    /** If true, the sender is a Twitch admin */
+    readonly admin: boolean;
+    /** If true, the sender is a global moderator */
+    readonly globalMod: boolean;
 
     /**  Badges, if present */
     badges: Image[] = [];
@@ -122,6 +140,7 @@ abstract class AbstractTwitchMessage extends AbstractMessage {
 
     constructor(channel: string, tags: any, message: string) {
         super(message, tags.id, parseInt(tags['tmi-sent-ts']));
+        this.userId = tags['user-id'];
         this.tags = tags;
         this.channel = _.trimStart(channel, "#");
         this.name = tags['display-name'] || tags.username;
@@ -131,6 +150,9 @@ abstract class AbstractTwitchMessage extends AbstractMessage {
         this.turbo = tags.turbo;
         this.partner = tags.badges?.partner !== undefined;
         this.broadcaster = tags.badges?.broadcaster !== undefined;
+        this.staff = tags['user-type'] === "staff";
+        this.admin = tags['user-type'] === "admin";
+        this.globalMod = tags['user-type'] === "global_mod";
 
         if (this.sub) {
             let badge = parseInt(tags.badges.subscriber);
@@ -389,12 +411,87 @@ export class SubMessage extends AbstractTwitchMessage {
     }
 }
 
-/** Represents a system message */0
+/** Represents a system message */
 export class SystemMessage extends AbstractMessage {
     readonly type = "system";
 
     constructor(message: string) {
         super(message);
+    }
+}
+
+class RealChat implements Client {
+    readonly client: tmi.Client;
+    readonly options: MilochatOptions;
+
+    private systemMessageHooks: MessageListener<SystemMessage>[] = [];
+    
+    constructor(channels: string[], options: MilochatOptions) {
+        this.client = new tmi.Client({
+            channels
+        });
+        this.options = options;
+    }
+
+    start(): void {
+        console.log("Starting Client");
+        this.registerSystemHooks();
+        this.client.connect()
+            .catch(console.error);
+    }
+
+    end(): void {
+        console.log("Disconnecting Client");
+        this.client.removeAllListeners();
+        this.client.disconnect();
+    }
+
+    onMessage(hook: MessageListener<ChatMessage>): void {
+        this.client.on('message', (channel: string, tags: any, message: string) => {                
+            let obj = new ChatMessage(channel, tags, message);
+            // console.log(obj);
+            
+            if (!obj.isBlacklist(this.options)) {
+                if (this.options.pronouns) {
+                    getPronouns(obj.name)
+                        .then(p => {
+                            obj.resolvePronouns(p);
+                            hook(obj);
+                        });
+                } else {
+                    hook(obj);
+                }
+            }
+        });
+    }
+
+    onSystemMessage(hook: MessageListener<SystemMessage>): void {
+        this.systemMessageHooks.push(hook);
+    }
+
+    onMessageDelete(hook: (messageId: string) => void): void {
+        this.client.on('messagedeleted', (channel: string, username: string, deletedMessage: string, state: tmi.DeleteUserstate) => {
+            if (state['target-msg-id']) {
+                hook(state['target-msg-id']);
+            }
+        });
+    }
+
+    onUserBan(hook: (username: string, channel: string) => void): void {
+        this.client.on("ban", (channel: string, username: string, reason: string) => {
+            hook(username, channel);
+        });
+    }
+
+    private registerSystemHooks(): void {
+        // this.client.on("raw_message", (cloned, message) => {
+        //     console.log(cloned);
+        // });
+    }   
+
+    private triggerSystemMessage(msg: string): void {
+        let toTrigger = new SystemMessage(msg);
+        this.systemMessageHooks.forEach(hook => hook(toTrigger));
     }
 }
 
@@ -404,42 +501,5 @@ export class SystemMessage extends AbstractMessage {
  * @returns The created client
  */
 export function realChat(channels: string[], options: MilochatOptions): Client {
-    const client = new tmi.Client({
-        channels
-    });
-
-    return {
-        start: function() {
-            console.log("Starting Client");
-            client.connect().catch(console.error);
-        },
-        onMessage: function(f: MessageListener<ChatMessage>) {
-            client.on('message', function(channel: string, tags: any, message: string) {                
-                let obj = new ChatMessage(channel, tags, message);
-                console.log(obj);
-                
-                if (!obj.isBlacklist(options)) {
-                    if (options.pronouns) {
-                        getPronouns(obj.name)
-                            .then(p => {
-                                obj.resolvePronouns(p);
-                                f(obj);
-                            });
-                    } else {
-                        f(obj);
-                    }
-                }
-            });
-        },
-        onClearChat: function(f: () => void) {
-            client.on('clearchat', function() {
-                f();
-            });
-        },
-        end: function() {
-            console.log("Disconnecting Client");
-            client.disconnect();
-            client.removeAllListeners();
-        }
-    }
+    return new RealChat(channels, options);
 }
