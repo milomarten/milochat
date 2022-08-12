@@ -2,7 +2,7 @@ import _ from "lodash";
 import { NextRouter } from "next/router"
 import { ParsedUrlQuery } from "querystring";
 import { ImageBank } from "./Emotes";
-import { getDefaultTheme, getTheme, Theme } from "./Themes";
+import { getTheme, Theme } from "./Themes";
 
 /** Contains an assortment of data loaded in before chat is started */
 export interface Preload {
@@ -131,5 +131,5 @@ function parseTheme(query: ParsedUrlQuery): Theme {
         };
     }
     let theme = asString(query.theme);
-    return (theme && getTheme(theme)) || getDefaultTheme();
+    return getTheme(theme);
 }

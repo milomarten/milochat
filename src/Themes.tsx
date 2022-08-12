@@ -15,18 +15,18 @@ const THEMES: {[key: string]: string} = {
     'minimal-color': `<span style="color:{{color}};">{{name}}: </span>{{message}}`
 };
 
-export function getTheme(id: string): Theme | undefined {
-    if (THEMES[id]) {
+export function getTheme(id: string | undefined): Theme {
+    if (id && THEMES[id]) {
         return {
             name: id,
             template: THEMES[id]
         }
     } else {
-        return undefined;
+        return getDefaultTheme();
     }
 }
 
-export function getDefaultTheme(): Theme {
+function getDefaultTheme(): Theme {
     return {
         name: "default",
         template: THEMES.default

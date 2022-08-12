@@ -5,7 +5,7 @@ import { Image, imageToHTML } from './Emotes';
 import { MilochatOptions, Preload } from './Options';
 import { getPronouns, Pronoun } from './Pronouns';
 
-export type MessageListener<T> = (message: T) => void;
+export type MessageListener<T> = (message: T) => void | PromiseLike<void>;
 type TwitchMap = {[key: number]: {img: Image, end: number}};
 
 /** Describes a common interface for a chat client */
@@ -573,16 +573,12 @@ class RealChat implements Client {
     }
 
     private augment<T extends TwitchMessage>(func: MessageListener<T>): MessageListener<T> {
-        return (message) => {
+        return async (message) => {
             if (this.options.pronouns) {
-                getPronouns(message.name)
-                    .then(p => {
-                        message.resolvePronouns(p);
-                        func(message)
-                    });
-            } else {
-                func(message);
+                let p = await getPronouns(message.name);
+                message.resolvePronouns(p);
             }
+            return func(message);
         }
     }
 }

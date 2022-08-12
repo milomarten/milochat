@@ -1,3 +1,5 @@
+import _ from "lodash";
+
 export type Pronoun = {id: string, display: string};
 const NO_PRONOUN: Pronoun = { id: "none", display: "" };
 
@@ -21,6 +23,9 @@ export function getPronouns(username: string): Promise<Pronoun | undefined> {
     if (pronounCache[username]) {
         let p = pronounCache[username];
         return Promise.resolve(p.id === NO_PRONOUN.id ? undefined : p);
+    }
+    if (_.isEmpty(displayMap)) {
+        return Promise.resolve(undefined);
     }
     return fetch(`https://pronouns.alejo.io/api/users/${username}`)
         .then(response => response.json())
