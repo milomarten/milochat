@@ -465,16 +465,30 @@ export class SystemMessage extends AbstractMessage {
 }
 
 class RealChat implements Client {
+    static MAX_CHANNELS = 5;
+
     readonly client: tmi.Client;
     readonly options: MilochatOptions;
+    readonly bot: Bot | undefined;
 
+    private messageHooks: MessageListener<ChatMessage>[] = [];
+    private subMessageHooks: MessageListener<SubMessage>[] = [];
     private systemMessageHooks: MessageListener<SystemMessage>[] = [];
     
     constructor(channels: string[], options: MilochatOptions) {
+        channels = _.take(channels, 5);
+        console.log(`Joining channels [${channels.join(", ")}]`);
+
         this.client = new tmi.Client({
             channels
         });
         this.options = options;
+
+        if (options.commands) {
+            let prefix = _.isString(options.commands) ? options.commands : "!";
+            this.bot = new Bot(prefix);
+            this.messageHooks.push(cm => this.bot?.onMessage(cm));
+        }
     }
 
     start(): void {
@@ -492,10 +506,7 @@ class RealChat implements Client {
 
     onMessage(hook: MessageListener<ChatMessage>): void {
         let callback = this.augment(hook);
-        this.client.on('message', (channel: string, tags: tmi.ChatUserstate, message: string) => {                
-            let obj = new ChatMessage(channel, tags, message);
-            callback(obj);
-        });
+        this.messageHooks.push(callback);
     }
 
     onSystemMessage(hook: MessageListener<SystemMessage>): void {
@@ -504,19 +515,54 @@ class RealChat implements Client {
 
     onSubscribe(hook: MessageListener<SubMessage>): void {
         let callback = this.augment(hook);
+        this.subMessageHooks.push(callback);
+    }
+
+    onMessageDelete(hook: (messageId: string) => void): void {
+        this.client.on('messagedeleted', (channel: string, username: string, deletedMessage: string, state: tmi.DeleteUserstate) => {
+            if (state['target-msg-id']) {
+                hook(state['target-msg-id']);
+            }
+        });
+    }
+
+    onUserBan(hook: (username: string, channel: string) => void): void {
+        this.client.on("ban", (channel: string, username: string) => {
+            hook(username, channel);
+        });
+
+        this.client.on("timeout", (channel: string, username: string) => {
+            hook(username, channel);
+        });
+    }
+
+    private registerSystemHooks(): void {
+        this.client.on('message', (channel: string, tags: tmi.ChatUserstate, message: string) => {                
+            let obj = new ChatMessage(channel, tags, message);
+            
+            for (let hook of this.messageHooks) {
+                hook(obj);
+            }
+        });
 
         // First subscription to a channel
         this.client.on("subscription", (channel: string, username: string, methods: tmi.SubMethods, message: string, userstate: tmi.SubUserstate) => {
             let m = new SubMessage(channel, userstate, message || "");
             console.log("sub", m);
-            callback(m);
+
+            for (let hook of this.subMessageHooks) {
+                hook(m);
+            }
         });
 
         // Resubscribe to a channel
         this.client.on("resub", (channel: string, username: string, months: number, message: string, userstate: tmi.SubUserstate, methods: tmi.SubMethods) => {
             let m = new SubMessage(channel, userstate, message || "");
             console.log("resub", m);
-            callback(m);
+            
+            for (let hook of this.subMessageHooks) {
+                hook(m);
+            }
         });
 
         // Still not sure the best way to handle the below four, since they are messages, but only ever static text.
@@ -543,28 +589,6 @@ class RealChat implements Client {
         this.client.on("anongiftpaidupgrade", (channel: string, username: string, userstate: tmi.AnonSubGiftUpgradeUserstate) => {
             console.log("anonupgrade", channel, username, userstate);
         });
-    }
-
-    onMessageDelete(hook: (messageId: string) => void): void {
-        this.client.on('messagedeleted', (channel: string, username: string, deletedMessage: string, state: tmi.DeleteUserstate) => {
-            if (state['target-msg-id']) {
-                hook(state['target-msg-id']);
-            }
-        });
-    }
-
-    onUserBan(hook: (username: string, channel: string) => void): void {
-        this.client.on("ban", (channel: string, username: string) => {
-            hook(username, channel);
-        });
-
-        this.client.on("timeout", (channel: string, username: string) => {
-            hook(username, channel);
-        });
-    }
-
-    private registerSystemHooks(): void {
-
     }   
 
     private triggerSystemMessage(msg: string): void {
@@ -590,4 +614,12 @@ class RealChat implements Client {
  */
 export function realChat(channels: string[], options: MilochatOptions): Client {
     return new RealChat(channels, options);
+}
+
+class Bot {
+    constructor(private prefix: string) { }
+
+    onMessage(msg: ChatMessage): void {
+        console.log(arguments);
+    }
 }

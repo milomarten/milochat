@@ -1,4 +1,4 @@
-import _ from "lodash";
+import _, { trimEnd } from "lodash";
 import { NextRouter } from "next/router"
 import { ParsedUrlQuery } from "querystring";
 import { ImageBank } from "./Emotes";
@@ -39,7 +39,19 @@ export interface MilochatOptions {
          * */
         fade?: number
     },
+    /** 
+     * The direction to scroll. 
+     * If "up", messages go from bottom up, with the earliest message at the bottom
+     * If "down", messages go from top down, with the earliest message at the top
+     * */
     direction?: "up" | "down",
+    /**
+     * Whether chat commands should be enabled
+     * If true, chat commands are enabled, using prefix "!"
+     * If false, chat commands are disabled
+     * If a string, chat commands are enabled, using the passed string as a prefix
+     */
+    commands?: boolean | string
 }
 
 type Limit = ChatSizeLimit | ChatTimeLimit;
@@ -51,10 +63,12 @@ export type ChatTimeLimit = { type: 'time', ms: number };
 export function optionsFromRouter(router: NextRouter): [string[], MilochatOptions, Theme] {
     let query = router.query;
 
+    const ffz = asBool(query.ffz);
     const count = asNumber(query.count);
     const ms = asNumber(query.time);
     const direction = asString(query.direction);
     const pronouns = asBool(query.pronouns);
+    const commands = asBoolOrString(query.commands);
 
     let flavor: Limit | undefined;
     if (count) {
@@ -72,10 +86,11 @@ export function optionsFromRouter(router: NextRouter): [string[], MilochatOption
     }
 
     const opts: MilochatOptions = {
-        ffz: asBool(query.ffz),
+        ffz,
         limit,
         direction: direction == "up" ? "up" : "down",
-        pronouns
+        pronouns,
+        commands: commands === undefined ? true : commands
     }
 
     return [asStringArray(query.channel), opts, parseTheme(query)];
@@ -120,6 +135,25 @@ function asNumber(val: string | string[] | undefined): number | undefined {
     } else {
         return parseInt(val);
     }
+}
+
+function asBoolOrString(val: string | string[] | undefined): boolean | string | undefined {
+    let norm: string;
+    if(_.isArray(val)) {
+        if (val.length) {
+            norm =_.last(val) as string;
+        } else {
+            return undefined;
+        }
+    } else if (val === undefined) {
+        return undefined;
+    } else {
+        norm = val;
+    }
+
+    if (norm === "true") return true;
+    else if (norm === "false") return false;
+    else return norm;
 }
 
 function parseTheme(query: ParsedUrlQuery): Theme {
