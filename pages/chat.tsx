@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AbstractTwitchMessage, ChatMessage, Message, realChat, SubMessage, SystemMessage, TwitchMessage } from "../src/Client";
 
 import Images from "../src/Images";
@@ -71,8 +71,9 @@ export function Chat(props: any) {
     }, [options.ffz, options.pronouns, channels]);
 
     if (preload) {
+        
         return (
-            <div className={"theme-" + theme.name}>
+            <div className={"theme-" + theme.name} id="chatbox">
                 <ChatBox channels={channels} options={options} template={theme.template}/>
             </div>
         )
@@ -94,9 +95,12 @@ export function Chat(props: any) {
  * @returns The chat lines. Each line is run through the template
  */
 function ChatBox(props: any) {
-    let template = props.template as string;
-    let options = props.options as MilochatOptions;
-    let [log, setLog] = useState(new Array<Message>());
+    const template = props.template as string;
+    const options = props.options as MilochatOptions;
+
+    const [log, setLog] = useState(new Array<Message>());
+
+    const endEl = useRef<HTMLDivElement>(null);
 
     function addMessageToLog(message: Message): void {
         if (options.limit?.flavor.type === "time") {
@@ -107,12 +111,11 @@ function ChatBox(props: any) {
 
         setLog(l => {
             let concat = [...l, message];
-            if (options.limit?.flavor.type === "count") {
-                let max = options.limit.flavor.count;
-                if (concat.length > max) {
-                    let toNix = _.take(concat, concat.length - max);
-                    registerForDelete(toNix, setLog, options);
-                }
+            let max = options.limit?.flavor.type === "count" ? options.limit.flavor.count : 50;
+
+            if (concat.length > max) {
+                let toNix = _.take(concat, concat.length - max);
+                registerForDelete(toNix, setLog, options);
             }
 
             return concat;
@@ -160,11 +163,17 @@ function ChatBox(props: any) {
             chat.end();
         }
     }, [props.channel]);
+
+    useEffect(() => {
+        if (options.direction === "down") {
+            endEl.current?.scrollIntoView({ behavior: "smooth" })
+        }
+    }, [log]);
     
     let templateFunc = useMemo(() => Handlebars.compile(template, DEFAULT_HANDLEBAR_OPTS), [template]);
 
     return (
-        <>
+        <div className="container">
         {
             (options.direction === "up" ? [...log].reverse() : log).map(line => {
                 return (
@@ -174,7 +183,8 @@ function ChatBox(props: any) {
                 )
             })
         }
-        </>
+        <div ref={endEl} />
+        </div>
     )
 }
 
