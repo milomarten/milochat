@@ -1,9 +1,9 @@
 import _ from 'lodash';
 import tmi from 'tmi.js';
 import {v4 as uuid} from 'uuid';
-import { Image, imageToHTML } from './Emotes';
-import { MilochatOptions, Preload } from './Options';
-import { getPronouns, Pronoun } from './Pronouns';
+import { Image, imageToHTML, SuperImageBank } from './Images';
+import { MilochatOptions } from './Options';
+import Pronouns, { Pronoun } from './Pronouns';
 
 export type MessageListener<T> = (message: T) => void | PromiseLike<void>;
 type TwitchMap = {[key: number]: {img: Image, end: number}};
@@ -210,7 +210,7 @@ export abstract class AbstractTwitchMessage extends AbstractMessage {
      * After calling this method, the badges array can be used safely.
      * @param preload The preloaded badge images
      */
-    resolveBadges(preload: Preload) : void {
+    resolveBadges(badges: SuperImageBank) : void {
         let finalBadges = [];
         let rawBadges = this.tags["badges-raw"];
         if (_.isString(rawBadges)) {
@@ -222,16 +222,22 @@ export abstract class AbstractTwitchMessage extends AbstractMessage {
                     // Fallback to the basic Subscriber badge (a star), but add the # months and tier as a class name
                     // to allow for CSS customizing.
                     // All other badges should work out of the box.
-                    badge = {
-                        ...preload.badges[badgeId + ":0"],
-                        name: `subscriber subscriber-${version} subscriber-tier-${this.subMonths?.tier || 0}`
-                    };
+                    let v0Badge = badges.get(badgeId + ":0", this.channel);
+                    if (v0Badge) {
+                        badge = {
+                            ...v0Badge,
+                            name: `subscriber subscriber-${version} subscriber-tier-${this.subMonths?.tier || 0}`
+                        };
+                    }
                 } else {
                     // All other badges should have two classes: The badge ID, and the badge ID paired with its version
                     // This allows for more flexibility with selectors
-                    badge = {
-                        ...preload.badges[badgeId + ":" + version],
-                        name: `${badgeId} ${badgeId}-${version}`
+                    let vBadge = badges.get(badgeId + ":" + version, this.channel);
+                    if (vBadge) {
+                        badge = {
+                            ...vBadge,
+                            name: `${badgeId} ${badgeId}-${version}`
+                        }
                     }
                 }
                 if (badge) {
@@ -263,7 +269,7 @@ export abstract class AbstractTwitchMessage extends AbstractMessage {
      * @param preload The preloaded images (containing custom and FFZ emotes)
      * @param options The options for additional configuration
      */
-    resolveEmotes(preload: Preload, options: MilochatOptions) {
+    resolveEmotes(emotes: SuperImageBank) {
         let raw = this.message;
         let tags = this.tags;
         let html = "";
@@ -290,9 +296,10 @@ export abstract class AbstractTwitchMessage extends AbstractMessage {
             }
         }
     
-        for (let emote in preload.emotes) {
+        let emotesForChannel = emotes.getAll(this.channel);
+        for (let emote in emotesForChannel) {
             let regex = new RegExp("\\b" + emote + "\\b", "g");
-            let tag = imageToHTML(preload.emotes[emote], "emote other");
+            let tag = imageToHTML(emotesForChannel[emote], "emote other");
             html = html.replaceAll(regex, tag);
         }
     
@@ -599,7 +606,7 @@ class RealChat implements Client {
     private augment<T extends TwitchMessage>(func: MessageListener<T>): MessageListener<T> {
         return async (message) => {
             if (this.options.pronouns) {
-                let p = await getPronouns(message.name);
+                let p = await Pronouns.getPronouns(message.name);
                 message.resolvePronouns(p);
             }
             return func(message);
@@ -620,6 +627,6 @@ class Bot {
     constructor(private prefix: string) { }
 
     onMessage(msg: ChatMessage): void {
-        console.log(arguments);
+        // console.log(arguments);
     }
 }

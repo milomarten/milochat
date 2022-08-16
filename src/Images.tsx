@@ -1,3 +1,5 @@
+import _ from "lodash";
+
 /**
  * An abstraction of an Image, containing its name and URLs to various scaling
  */
@@ -26,25 +28,57 @@ export function imageToHTML(img: Image, clazz: string): string {
  * A collection of images, keyed on their ID.
  */
 export type ImageBank = { [key: string]: Image };
+export class SuperImageBank {
+    global: ImageBank;
+    local: { [key: string]: ImageBank };
+
+    constructor(global?: ImageBank, local?: { [key: string]: ImageBank }) {
+        this.global = global || {};
+        this.local = local || {};
+    }
+
+    get(emote: string, channel: string): Image | undefined {
+        return this.local[channel]?.[emote] || this.global[emote];
+    }
+
+    getAll(channel: string): ImageBank {
+        let local = this.local[channel] || {};
+        return {
+            ...this.global,
+            ...local
+        }
+    }
+}
+
+export class ImageService {
+    ffzEmotes: SuperImageBank = new SuperImageBank();
+    badges: SuperImageBank = new SuperImageBank();
+
+    async populateFFZEmotes(channel?: string[]): Promise<void> {
+        this.ffzEmotes = await getAllFFZMulti(channel);
+    }
+    
+    async populateBadges(): Promise<void> {
+        this.badges = await getAllTwitchBadges();
+    }
+}
+
+export default new ImageService();
 
 /**
  * Asynchronously retrieve global and channel FFZ emotes
  * @param channel The channels to pull from. If absent, only global are pulled
  * @returns A bank of images containing all the emotes
  */
-export async function getAllFFZMulti(channel?: string[]): Promise<ImageBank> {
-    let localPromises = channel ? channel.map(c => getChannelFFZ(c)) : [];
+async function getAllFFZMulti(channel?: string[]): Promise<SuperImageBank> {
+    let channels = channel || [];
+    let localPromises = channels.map(c => getChannelFFZ(c));
     let promises = [getGlobalFFZ(), ...localPromises];
 
-    let banks = await Promise.all(promises);
-    let merged = {};
-    for (let bank of banks) {
-        merged = {
-            ...merged,
-            ...bank
-        }
-    }
-    return merged;
+    let [global, ...local] = await Promise.all(promises);
+    let merged = _.zipObject(channels, local);
+
+    return new SuperImageBank(global, merged);
 }
 
 /**
@@ -110,7 +144,7 @@ function parseFFZResponse(data: any) : ImageBank {
  * Asynchronously retrieve all global Twitch badges
  * @returns The bank of Twitch badge images for use
  */
-export function getAllTwitchBadges(): Promise<ImageBank> {
+export function getAllTwitchBadges(): Promise<SuperImageBank> {
     return fetch("https://badges.twitch.tv/v1/badges/global/display")
         .then(response => response.json())
         .then(data => {
@@ -130,10 +164,10 @@ export function getAllTwitchBadges(): Promise<ImageBank> {
                     bank[bankKey] = image;
                 }
             }
-            return bank;
+            return new SuperImageBank(bank);
         })
         .catch(err => {
             console.error(err);
-            return {}
+            return new SuperImageBank();
         })
 }

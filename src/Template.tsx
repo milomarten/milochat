@@ -2,7 +2,7 @@ import Handlebars, { HelperOptions } from "handlebars";
 import _ from "lodash";
 import utils from 'handlebars-utils';
 import { ChatMessage } from "./Client";
-import { imageToHTML } from "./Emotes";
+import { imageToHTML } from "./Images";
 
 //Allows usage of the date helper, which can format chat message timestamps
 Handlebars.registerHelper("date", require("helper-date"));

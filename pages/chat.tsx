@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { AbstractTwitchMessage, ChatMessage, Message, realChat, SubMessage, SystemMessage, TwitchMessage } from "../src/Client";
 
-import { getAllFFZMulti, getAllTwitchBadges } from "../src/Emotes";
+import Images from "../src/Images";
 import { Template } from "../src/Template";
 import { useRouter } from "next/router";
 
-import { populatePronounDisplayMap } from "../src/Pronouns";
-import { MilochatOptions, optionsFromRouter, Preload } from "../src/Options";
+import Pronouns from "../src/Pronouns";
+import { MilochatOptions, optionsFromRouter } from "../src/Options";
 
 import Handlebars from "handlebars";
 import React from "react";
@@ -60,25 +60,20 @@ export function Chat(props: any) {
     const options = props.options as MilochatOptions;
     const theme = props.theme as Theme;
 
-    let [preload, setPreload] = useState<Preload>();
+    let [preload, setPreload] = useState(false);
     
     useEffect(() => {
-        Promise.all([
-            getAllTwitchBadges(),
-            options.ffz ? getAllFFZMulti(channels) : Promise.resolve({}),
-            options.pronouns ? populatePronounDisplayMap() : Promise.resolve()
-        ]).then(a => {
-            setPreload({
-                badges: a[0],
-                emotes: a[1]
-            });
-        });
-    }, []);
+        Promise.allSettled([
+            Images.populateBadges(),
+            options.ffz ? Images.populateFFZEmotes(channels) : Promise.resolve(),
+            options.pronouns ? Pronouns.populatePronounDisplayMap() : Promise.resolve()
+        ]).then(() => setPreload(true));
+    }, [options.ffz, options.pronouns, channels]);
 
     if (preload) {
         return (
             <div className={"theme-" + theme.name}>
-                <ChatBox channels={channels} preload={preload} options={options} template={theme.template}/>
+                <ChatBox channels={channels} options={options} template={theme.template}/>
             </div>
         )
     } else {
@@ -100,7 +95,6 @@ export function Chat(props: any) {
  */
 function ChatBox(props: any) {
     let template = props.template as string;
-    let preload = props.preload as Preload;
     let options = props.options as MilochatOptions;
     let [log, setLog] = useState(new Array<Message>());
 
@@ -129,8 +123,8 @@ function ChatBox(props: any) {
         let chat = realChat(props.channels, options);
 
         chat.onMessage((message: ChatMessage) => {
-            message.resolveEmotes(preload, options);
-            message.resolveBadges(preload);
+            message.resolveEmotes(Images.ffzEmotes);
+            message.resolveBadges(Images.badges);
 
             addMessageToLog(message);
         });
@@ -140,8 +134,8 @@ function ChatBox(props: any) {
         });
 
         chat.onSubscribe((message: SubMessage) => {
-            message.resolveEmotes(preload, options);
-            message.resolveBadges(preload);
+            message.resolveEmotes(Images.ffzEmotes);
+            message.resolveBadges(Images.badges);
 
             addMessageToLog(message);
         })
@@ -165,7 +159,7 @@ function ChatBox(props: any) {
         return () => {
             chat.end();
         }
-    }, [props.channel, preload]);
+    }, [props.channel]);
     
     let templateFunc = useMemo(() => Handlebars.compile(template, DEFAULT_HANDLEBAR_OPTS), [template]);
 

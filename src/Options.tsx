@@ -1,14 +1,7 @@
-import _, { trimEnd } from "lodash";
+import _ from "lodash";
 import { NextRouter } from "next/router"
 import { ParsedUrlQuery } from "querystring";
-import { ImageBank } from "./Emotes";
 import { getTheme, Theme } from "./Themes";
-
-/** Contains an assortment of data loaded in before chat is started */
-export interface Preload {
-    emotes: ImageBank;
-    badges: ImageBank;
-}
 
 /** The options that can be used to configure Milochat */
 export interface MilochatOptions {
