@@ -183,7 +183,7 @@ function ChatBox(props: any) {
                 )
             })
         }
-        <div ref={endEl} />
+        <div ref={endEl} id="end"/>
         </div>
     )
 }
