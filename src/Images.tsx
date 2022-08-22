@@ -120,12 +120,9 @@ export class ImageService {
             let globalFfzEmotes = await getGlobalFFZ();
             this._emotes.addGlobal(globalFfzEmotes);
 
-            // Each getChannelFFZ call returns a two-size array: [Emotes, Badges]
-            // Calling for each channel returns an 2D array: n elements, each 2 size: [[Emotes, Badges], [Emotes, Badges], [Emotes, Badges]]
-            // Unzip "inverts" them, returning a 2D array: 2 elements, each of n size: [[Emotes, Emotes, Emotes], [Badges, Badges, Badges]]
-            let [localFfzEmotes, localFfzBadges] = _.unzip(await Promise.all(channel.map(c => getChannelFFZ(c))));
-            this._badges.addLocals(_.zipObject(channel, localFfzBadges));
-            this._emotes.addLocals(_.zipObject(channel, localFfzEmotes));
+            let {badges, emotes} = await getChannelFFZs(channel);
+            this._badges.addLocals(badges);
+            this._emotes.addLocals(emotes);
         }
 
         if (useBttv) {
@@ -134,6 +131,8 @@ export class ImageService {
 
             this._customBadges = await getBTTVBadges();
         }
+
+        console.log(this);
     }
 
     get emotes(): SuperImageBank {
@@ -179,41 +178,70 @@ async function getGlobalFFZ(): Promise<ImageBank> {
         })
 }
 
-/**
- * Asynchronously retrieves the FFZ emotes of a channel
- * @param channel The channel name
- * @returns Two emote banks containing the FFZ emotes for that channel and the FFZ badges for that channel
- */
-async function getChannelFFZ(channel: string): Promise<[ImageBank, ImageBank]> {
-    console.log(`Fetching emotes for channel ${channel} from FFZ...`);
-    const [emotes, badges] = await fetch("https://api.frankerfacez.com/v1/room/" + channel)
+async function getChannelFFZs(channels: string[]): Promise<{emotes: Bank<ImageBank>, badges: Bank<ImageBank>}> {
+    console.log(`Fetching emotes for channels ${channels.join(",")} from FFZ...`);
+    const data = await fetch(`https://api.frankerfacez.com/v1/multi_room/${channels.join(",")}`)
         .then(response => response.json())
         .then(d => {
-            let badgeBank: ImageBank = {};
-            if (d.room.mod_urls) {
-                let modBadgeUrl: Image = {
-                    name: "moderator",
-                    clazz: ["badge", "channel", channel],
-                    source: "ffz",
-                    scale: {}
-                };
-                _.forEach([1, 2, 4], (idx) => {
-                    if (d.room.mod_urls[idx]) {
-                        modBadgeUrl.scale[idx] = "https:" + d.room.mod_urls[idx]
+            let sets = d.sets as {[key: string]: any};
+            let rooms = d.rooms as any[];
+
+            let emoteBank: Bank<ImageBank> = {};
+            let badgeBank: Bank<ImageBank> = {};
+            
+            for (let room of rooms) {
+                let roomBadgeBank: ImageBank = {};
+                let roomEmoteBank: ImageBank = {};
+
+                let id = room.id as string;
+
+                if (room.mod_urls) {
+                    let img: Image = {
+                        name: "moderator",
+                        clazz: ["badge", "channel", id],
+                        source: "ffz",
+                        scale: {
+                            1: "https:" + room.mod_urls[1],
+                            2: "https:" + room.mod_urls[2],
+                            4: "https:" + room.mod_urls[4]
+                        }
                     }
-                })
-                badgeBank["moderator:1"] = modBadgeUrl;
+                    roomBadgeBank["moderator:1"] = img;
+                }
+
+                let emotes = sets[room.set]?.emoticons;
+                for (let emote of emotes) {
+                    let img: Image = {
+                        name: emote.name,
+                        clazz: ["emote", "channel", id],
+                        source: "ffz",
+                        scale: {
+                            1: "https:" + emote.urls[1],
+                            2: "https:" + emote.urls[2],
+                            4: "https:" + emote.urls[4]
+                        }
+                    }
+                    roomEmoteBank[emote.name] = img;
+                }
+                emoteBank[id] = roomEmoteBank;
+
+                console.log(`Loaded ${Object.keys(emotes).length} emotes for channel ${id}`);
             }
 
-            return [parseFFZResponse(d, `channel ${channel}`), badgeBank];
+            return {
+                emotes: emoteBank,
+                badges: badgeBank
+            }
         })
         .catch(err => {
             console.error(err);
-            return [{}, {}];
+            return {
+                emotes: {},
+                badges: {}
+            }
         });
-        
-    console.log(`Loaded ${Object.keys(emotes).length} emotes for channel ${channel}`);
-    return [emotes, badges];
+
+    return data;
 }
 
 function parseFFZResponse(data: any, type: string) : ImageBank {

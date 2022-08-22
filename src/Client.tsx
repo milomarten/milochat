@@ -142,6 +142,8 @@ export abstract class AbstractTwitchMessage extends AbstractMessage {
     /** If true, the sender is a global moderator */
     readonly globalMod: boolean;
 
+    readonly vip: boolean;
+
     /**  Badges, if present */
     badges: Image[] = [];
     /** The chatter's pronouns, in human-readable form */
@@ -161,6 +163,7 @@ export abstract class AbstractTwitchMessage extends AbstractMessage {
         this.turbo = tags.turbo || false;
         this.partner = tags.badges?.partner !== undefined;
         this.broadcaster = tags.badges?.broadcaster !== undefined;
+        this.vip = tags.badges?.vip !== undefined;
         this.staff = tags['user-type'] === "staff";
         this.admin = tags['user-type'] === "admin";
         this.globalMod = tags['user-type'] === "global_mod";
