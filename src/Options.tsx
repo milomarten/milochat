@@ -56,11 +56,11 @@ export type ChatTimeLimit = { type: 'time', ms: number };
 export function optionsFromRouter(router: NextRouter): [string[], MilochatOptions, Theme] {
     let query = router.query;
 
-    const ffz = asBool(query.ffz);
+    const ffz = asBool(query.ffz, true);
     const count = asNumber(query.count);
     const ms = asNumber(query.time);
     const direction = asString(query.direction);
-    const pronouns = asBool(query.pronouns);
+    const pronouns = asBool(query.pronouns, false);
     const commands = asBoolOrString(query.commands);
 
     let flavor: Limit | undefined;
@@ -89,11 +89,11 @@ export function optionsFromRouter(router: NextRouter): [string[], MilochatOption
     return [asStringArray(query.channel), opts, parseTheme(query)];
 }
 
-function asBool(val: string | string[] | undefined): boolean {
+function asBool(val: string | string[] | undefined, def: boolean): boolean {
     if(_.isArray(val)) {
         return _.last(val) === "true";
     } else if (val === undefined) {
-        return false;
+        return def;
     } else {
         return val === "true";
     }

@@ -280,8 +280,8 @@ export abstract class AbstractTwitchMessage extends AbstractMessage {
             if (emotesFromTwitch[idx]) {
                 let emote = emotesFromTwitch[idx];
                 let emoteName = raw.substring(idx, emote.end + 1);
-
-                let tag = imageToHTML({...emote.img, name: emoteName}, "emote twitch")
+                emote.img.name = emoteName;
+                let tag = imageToHTML(emote.img)
                 html += tag;
                 idx = emote.end + 1;
             } else {
@@ -299,7 +299,7 @@ export abstract class AbstractTwitchMessage extends AbstractMessage {
         let emotesForChannel = emotes.getAll(this.channel);
         for (let emote in emotesForChannel) {
             let regex = new RegExp("\\b" + emote + "\\b", "g");
-            let tag = imageToHTML(emotesForChannel[emote], "emote other");
+            let tag = imageToHTML(emotesForChannel[emote]);
             html = html.replaceAll(regex, tag);
         }
     
@@ -317,9 +317,13 @@ export abstract class AbstractTwitchMessage extends AbstractMessage {
                     map[parseInt(range[0])] = {
                         img: {
                             name: "",
-                            "1x": `${baseUrl}/1.0`,
-                            "2x": `${baseUrl}/2.0`,
-                            "4x": `${baseUrl}/3.0`
+                            source: "twitch",
+                            clazz: ["emote"],
+                            scale: {
+                                1: `${baseUrl}/1.0`,
+                                2: `${baseUrl}/2.0`,
+                                4: `${baseUrl}/3.0`
+                            }
                         },
                         end: parseInt(range[1])
                     };
@@ -493,7 +497,7 @@ class RealChat implements Client {
 
         if (options.commands) {
             let prefix = _.isString(options.commands) ? options.commands : "!";
-            this.bot = new Bot(prefix);
+            this.bot = new Bot(prefix, this);
             this.messageHooks.push(cm => this.bot?.onMessage(cm));
         }
     }
@@ -509,6 +513,29 @@ class RealChat implements Client {
         console.log("Disconnecting Client");
         this.client.removeAllListeners();
         this.client.disconnect();
+    }
+
+    join(channel: string): void {
+        if (this.client.getChannels().length < RealChat.MAX_CHANNELS) {
+            console.log(`Attempting to join ${channel}'s chat...`);
+            this.client.join(channel)
+                .then(c => console.log("Join successful"))
+                .catch(e => console.error(e));
+        } else {
+            console.log(`Unable to join more than ${RealChat.MAX_CHANNELS} channel(s) at once`);
+        }
+    }
+
+    leave(channel: string): void {
+        console.log(`Attempting to leave ${channel}'s chat...`);
+        this.client.part(channel)
+            .then(c => {
+                console.log("Leave successful");
+                if (this.client.getChannels().length === 0) {
+                    console.log("No more channels to listen to...")
+                }
+            })
+            .catch(e => console.error(e));
     }
 
     onMessage(hook: MessageListener<ChatMessage>): void {
@@ -624,9 +651,25 @@ export function realChat(channels: string[], options: MilochatOptions): Client {
 }
 
 class Bot {
-    constructor(private prefix: string) { }
+    constructor(private prefix: string, private client: RealChat) { }
 
     onMessage(msg: ChatMessage): void {
-        // console.log(arguments);
+        if (msg.message.startsWith(this.prefix) && this.canUse(msg)) {
+            let [command, ...args] = msg.message.substring(1).split(/\s+/);
+            switch(command) {
+                case "join": this.join(args); break;
+                case "leave": this.client.leave(args[0] || msg.channel); break;
+            }
+        }
+    }
+
+    canUse(msg: ChatMessage): boolean {
+        return msg.broadcaster || msg.mod;
+    }
+
+    join(args: string[]) {
+        if (args[0]) {
+            this.client.join(args[0]);
+        }
     }
 }

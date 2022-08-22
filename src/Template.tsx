@@ -9,9 +9,9 @@ Handlebars.registerHelper("date", require("helper-date"));
 // Renders a list of badges
 Handlebars.registerPartial("badgelist", function(context: ChatMessage) {
     return context.badges.map(badge => {
-        let url = badge["1x"] || badge["2x"] || badge["4x"];
+        let url = badge.scale[1];
         if (url) {
-            return imageToHTML(badge, `badge ${badge.name}`);
+            return imageToHTML(badge);
         } else {
             return "";
         }

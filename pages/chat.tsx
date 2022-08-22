@@ -28,16 +28,12 @@ function ChatWrapper() {
     let [config, setConfig] = useState<[string[], MilochatOptions, Theme]>();
     
     useEffect(() => {
-        if (router.isReady) {
-            const [channels, opts, template] = optionsFromRouter(router);
-            console.log("Using options:", opts);
-            
-            setConfig([channels, opts, template]);
-        }
+        if (router.isReady) { setConfig(optionsFromRouter(router)); }
     }, [router.isReady]);
 
     if (config) {
         let [channels, options, theme] = config;
+        console.log("Using options:", options);
         return (
             <Chat channels={channels} options={options} theme={theme}/>
         )
@@ -64,8 +60,7 @@ export function Chat(props: any) {
     
     useEffect(() => {
         Promise.allSettled([
-            Images.populateBadges(),
-            options.ffz ? Images.populateFFZEmotes(channels) : Promise.resolve(),
+            Images.populate(channels, options.ffz || false),
             options.pronouns ? Pronouns.populatePronounDisplayMap() : Promise.resolve()
         ]).then(() => setPreload(true));
     }, [options.ffz, options.pronouns, channels]);
@@ -126,7 +121,7 @@ function ChatBox(props: any) {
         let chat = realChat(props.channels, options);
 
         chat.onMessage((message: ChatMessage) => {
-            message.resolveEmotes(Images.ffzEmotes);
+            message.resolveEmotes(Images.emotes);
             message.resolveBadges(Images.badges);
 
             addMessageToLog(message);
@@ -137,7 +132,7 @@ function ChatBox(props: any) {
         });
 
         chat.onSubscribe((message: SubMessage) => {
-            message.resolveEmotes(Images.ffzEmotes);
+            message.resolveEmotes(Images.emotes);
             message.resolveBadges(Images.badges);
 
             addMessageToLog(message);

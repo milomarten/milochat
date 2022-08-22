@@ -5,81 +5,138 @@ import _ from "lodash";
  */
 export interface Image {
     name: string,
-    '1x': string | undefined,
-    '2x': string | undefined,
-    '4x': string | undefined
+    clazz: string[],
+    source: string,
+    scale: { [key: number]: string }
 }
 
-export function imageToHTML(img: Image, clazz: string): string {
-    let srcset = [];
-    if (img["1x"]) {
-        srcset.push(`${img["1x"]} 1x`);
-    }
-    if (img["2x"]) {
-        srcset.push(`${img["2x"]} 2x`);
-    }
-    if (img["4x"]) {
-        srcset.push(`${img["4x"]} 4x`);
-    }
-    return `<img class="${clazz}" src="${img["1x"]}" ${srcset.length ? `srcset="${srcset.join(",")}"` : ""} alt="${img.name}">`;
+export function imageToHTML(img: Image): string {
+    let srcset: string[] = [];
+    _.forEach(img.scale, (value, key) => {
+        srcset.push(`${value} ${key}x`);
+    });
+    return `<img class="${img.clazz.join(" ")} ${img.source}" src="${img.scale[1]}" ${srcset.length ? `srcset="${srcset.join(",")}"` : ""} alt="${img.name}">`;
 }
 
 /**
- * A collection of images, keyed on their ID.
+ * Just a regular bank, keyed on a String with an arbitrary value.
  */
-export type ImageBank = { [key: string]: Image };
-export class SuperImageBank {
-    global: ImageBank;
-    local: { [key: string]: ImageBank };
+export type Bank<T> = { [key: string]: T};
+/**
+ * A collection of Banks, keyed on Channel and ID
+ */
+export class SuperBank<T> {
+    global: Bank<T>;
+    local: Bank<Bank<T>>;
 
-    constructor(global?: ImageBank, local?: { [key: string]: ImageBank }) {
+    /**
+     * Create a Superbank
+     * @param global A bank to serve as a fallback
+     * @param local A bank of banks, keyed on Channel name.
+     */
+    constructor(global?: Bank<T>, local?: Bank<Bank<T>>) {
         this.global = global || {};
         this.local = local || {};
     }
 
-    get(emote: string, channel: string): Image | undefined {
-        return this.local[channel]?.[emote] || this.global[emote];
+    /**
+     * Retrieve an item by its ID and Channel.
+     * If the channel doesn't exist, or the ID doesn't exist for that channel, the
+     * ID is looked in the fallback bank automatically.
+     * @param id The ID to look up
+     * @param channel The channel to search in
+     * @returns The item, if found, or undefined if not.
+     */
+    get(id: string, channel: string): T | undefined {
+        return this.local[channel]?.[id] || this.global[id];
     }
 
-    getAll(channel: string): ImageBank {
+    /**
+     * Get a flattened Bank containing all information.
+     * The fallback and channel data are merged into one, with channel data overwriting the fallback.
+     * @param channel The channel to retrieve
+     * @returns A bank representing all items for that channel
+     */
+    getAll(channel: string): Bank<T> {
         let local = this.local[channel] || {};
         return {
             ...this.global,
             ...local
         }
     }
+
+    /**
+     * Append a new bank to the global fallback.
+     * Anything inside of bank will overwrite what was previously present
+     * @param bank The bank to add
+     */
+    addGlobal(bank: Bank<T>): void {
+        this.global = {
+            ...this.global,
+            ...bank
+        }
+    }
+
+    /**
+     * Append a new superbank for the local lookups
+     * @param bank The superbank to add
+     */
+    addLocals(bank: Bank<Bank<T>>): void {
+        for (let channel of Object.keys(bank)) {
+            let local = this.local[channel] || {};
+            this.local[channel] = {
+                ...local,
+                ...bank[channel]
+            };
+        }
+    }
 }
+/**
+ * A collection of images, keyed on their ID.
+ */
+export type ImageBank = Bank<Image>;
+/**
+ * A collection of ImageBanks, keyed on a channel name.
+ * Each SuperImageBank also contains a set of global Images, to act as a fallback.
+ */
+export type SuperImageBank = SuperBank<Image>;
 
 export class ImageService {
-    ffzEmotes: SuperImageBank = new SuperImageBank();
-    badges: SuperImageBank = new SuperImageBank();
+    private _emotes: SuperImageBank = new SuperBank<Image>();
+    private _badges: SuperImageBank = new SuperBank<Image>();
 
-    async populateFFZEmotes(channel?: string[]): Promise<void> {
-        this.ffzEmotes = await getAllFFZMulti(channel);
+    /**
+     * Populate all images
+     * @param channel The channels to retrieve information for
+     * @param useFfz If true, FFZ sources are also queried
+     * @returns Promise which resolves when all sources have been processed
+     */
+    async populate(channel: string[], useFfz: boolean): Promise<void> {
+        this._badges = await getAllTwitchBadges();
+        
+        if (useFfz) {
+            let globalFfzEmotes = await getGlobalFFZ();
+            this._emotes.addGlobal(globalFfzEmotes);
+
+            // Each getChannelFFZ call returns a two-size array: [Emotes, Badges]
+            // Calling for each channel returns an 2D array: n elements, each 2 size: [[Emotes, Badges], [Emotes, Badges], [Emotes, Badges]]
+            // Unzip "inverts" them, returning a 2D array: 2 elements, each of n size: [[Emotes, Emotes, Emotes], [Badges, Badges, Badges]]
+            let [localFfzEmotes, localFfzBadges] = _.unzip(await Promise.all(channel.map(c => getChannelFFZ(c))));
+            this._badges.addLocals(_.zipObject(channel, localFfzBadges));
+            this._emotes.addLocals(_.zipObject(channel, localFfzEmotes));
+        }
     }
-    
-    async populateBadges(): Promise<void> {
-        this.badges = await getAllTwitchBadges();
+
+    get emotes(): SuperImageBank {
+        return this._emotes;
+    }
+
+    get badges(): SuperImageBank {
+        return this._badges;
     }
 }
 
 export default new ImageService();
-
-/**
- * Asynchronously retrieve global and channel FFZ emotes
- * @param channel The channels to pull from. If absent, only global are pulled
- * @returns A bank of images containing all the emotes
- */
-async function getAllFFZMulti(channel?: string[]): Promise<SuperImageBank> {
-    let channels = channel || [];
-    let localPromises = channels.map(c => getChannelFFZ(c));
-    let promises = [getGlobalFFZ(), ...localPromises];
-
-    let [global, ...local] = await Promise.all(promises);
-    let merged = _.zipObject(channels, local);
-
-    return new SuperImageBank(global, merged);
-}
 
 /**
  * Asynchrnously retrieves the global FFZ emotes 
@@ -87,20 +144,8 @@ async function getAllFFZMulti(channel?: string[]): Promise<SuperImageBank> {
  */
 async function getGlobalFFZ(): Promise<ImageBank> {
     console.log("Fetching global emotes from FFZ...");
-    const data = await callFFZ("https://api.frankerfacez.com/v1/set/global");
+    const data = await callFFZ("https://api.frankerfacez.com/v1/set/global", "global");
     console.log("Loaded %d global emotes from FFZ", Object.keys(data).length);
-    return data;
-}
-
-/**
- * Asynchronously retrieves the FFZ emotes of a channel
- * @param channel The channel name
- * @returns An emote bank containing the FFZ emotes for that channel
- */
-async function getChannelFFZ(channel: string): Promise<ImageBank> {
-    console.log(`Fetching emotes for channel ${channel} from FFZ...`);
-    const data = await callFFZ("https://api.frankerfacez.com/v1/room/" + channel);
-    console.log(`Loaded ${Object.keys(data).length} emotes for channel ${channel}`);
     return data;
 }
 
@@ -109,11 +154,11 @@ async function getChannelFFZ(channel: string): Promise<ImageBank> {
  * @param url The URL to call
  * @returns The bank of images for use
  */
-function callFFZ(url: string): Promise<ImageBank> {
+ function callFFZ(url: string, type: string): Promise<ImageBank> {
     return fetch(url)
         .then(response => response.json())
         .then(data => {
-            return parseFFZResponse(data);
+            return parseFFZResponse(data, type);
         })
         .catch(err => {
             console.error(err);
@@ -121,7 +166,44 @@ function callFFZ(url: string): Promise<ImageBank> {
         })
 }
 
-function parseFFZResponse(data: any) : ImageBank {
+/**
+ * Asynchronously retrieves the FFZ emotes of a channel
+ * @param channel The channel name
+ * @returns Two emote banks containing the FFZ emotes for that channel and the FFZ badges for that channel
+ */
+async function getChannelFFZ(channel: string): Promise<[ImageBank, ImageBank]> {
+    console.log(`Fetching emotes for channel ${channel} from FFZ...`);
+    const [emotes, badges] = await fetch("https://api.frankerfacez.com/v1/room/" + channel)
+        .then(response => response.json())
+        .then(d => {
+            let badgeBank: ImageBank = {};
+            if (d.room.mod_urls) {
+                let modBadgeUrl: Image = {
+                    name: "moderator",
+                    clazz: ["badge", "channel", channel],
+                    source: "ffz",
+                    scale: {}
+                };
+                _.forEach([1, 2, 4], (idx) => {
+                    if (d.room.mod_urls[idx]) {
+                        modBadgeUrl.scale[idx] = "https:" + d.room.mod_urls[idx]
+                    }
+                })
+                badgeBank["moderator:1"] = modBadgeUrl;
+            }
+
+            return [parseFFZResponse(d, `channel ${channel}`), badgeBank];
+        })
+        .catch(err => {
+            console.error(err);
+            return [{}, {}];
+        });
+        
+    console.log(`Loaded ${Object.keys(emotes).length} emotes for channel ${channel}`);
+    return [emotes, badges];
+}
+
+function parseFFZResponse(data: any, type: string) : ImageBank {
     let sets = data.sets;
     let emote_lookup: ImageBank = {};
     for (let set_key in sets) {
@@ -129,9 +211,13 @@ function parseFFZResponse(data: any) : ImageBank {
 
             let urls: Image = {
                 name: emote.name,
-                "1x": emote.urls["1"],
-                "2x": emote.urls["2"],
-                "4x": emote.urls["4"]
+                source: "ffz",
+                clazz: ["emote", type],
+                scale: {
+                    1: emote.urls["1"],
+                    2: emote.urls["2"],
+                    4: emote.urls["4"]
+                }
             }
 
             emote_lookup[emote.name] = urls;
@@ -144,7 +230,7 @@ function parseFFZResponse(data: any) : ImageBank {
  * Asynchronously retrieve all global Twitch badges
  * @returns The bank of Twitch badge images for use
  */
-export function getAllTwitchBadges(): Promise<SuperImageBank> {
+function getAllTwitchBadges(): Promise<SuperImageBank> {
     return fetch("https://badges.twitch.tv/v1/badges/global/display")
         .then(response => response.json())
         .then(data => {
@@ -156,18 +242,22 @@ export function getAllTwitchBadges(): Promise<SuperImageBank> {
                     let emoteDataForVersion = emoteData.versions[version];
                     let image: Image = {
                         name: key,
-                        "1x": emoteDataForVersion.image_url_1x,
-                        "2x": emoteDataForVersion.image_url_2x,
-                        "4x": emoteDataForVersion.image_url_4x
+                        source: "twitch",
+                        clazz: ["badge", key, `${key}-${version}`],
+                        scale: {
+                            1: emoteDataForVersion.image_url_1x,
+                            2: emoteDataForVersion.image_url_2x,
+                            4: emoteDataForVersion.image_url_4x
+                        }
                     };
                     let bankKey = `${key}:${version}`;
                     bank[bankKey] = image;
                 }
             }
-            return new SuperImageBank(bank);
+            return new SuperBank<Image>(bank);
         })
         .catch(err => {
             console.error(err);
-            return new SuperImageBank();
+            return new SuperBank<Image>();
         })
 }
