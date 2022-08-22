@@ -60,7 +60,7 @@ export function Chat(props: any) {
     
     useEffect(() => {
         Promise.allSettled([
-            Images.populate(channels, options.ffz || false),
+            Images.populate(channels, options.ffz || false, options.bttv || false),
             options.pronouns ? Pronouns.populatePronounDisplayMap() : Promise.resolve()
         ]).then(() => setPreload(true));
     }, [options.ffz, options.pronouns, channels]);

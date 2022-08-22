@@ -7,6 +7,8 @@ import { getTheme, Theme } from "./Themes";
 export interface MilochatOptions {
     /** Toggles whether FFZ emotes are supported */
     ffz?: boolean,
+    /** Toggles whether BTTV emotes are supported */
+    bttv?: boolean,
     /** Toggles whether Pronouns are supported, via pronouns.alejo.io */
     pronouns?: boolean,
     blacklist?: {
@@ -57,6 +59,7 @@ export function optionsFromRouter(router: NextRouter): [string[], MilochatOption
     let query = router.query;
 
     const ffz = asBool(query.ffz, true);
+    const bttv = asBool(query.bttv, true);
     const count = asNumber(query.count);
     const ms = asNumber(query.time);
     const direction = asString(query.direction);
@@ -80,6 +83,7 @@ export function optionsFromRouter(router: NextRouter): [string[], MilochatOption
 
     const opts: MilochatOptions = {
         ffz,
+        bttv,
         limit,
         direction: direction == "up" ? "up" : "down",
         pronouns,

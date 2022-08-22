@@ -105,13 +105,15 @@ export class ImageService {
     private _emotes: SuperImageBank = new SuperBank<Image>();
     private _badges: SuperImageBank = new SuperBank<Image>();
 
+    private _customBadges: ImageBank = {};
+
     /**
      * Populate all images
      * @param channel The channels to retrieve information for
      * @param useFfz If true, FFZ sources are also queried
      * @returns Promise which resolves when all sources have been processed
      */
-    async populate(channel: string[], useFfz: boolean): Promise<void> {
+    async populate(channel: string[], useFfz: boolean, useBttv: boolean): Promise<void> {
         this._badges = await getAllTwitchBadges();
         
         if (useFfz) {
@@ -125,6 +127,13 @@ export class ImageService {
             this._badges.addLocals(_.zipObject(channel, localFfzBadges));
             this._emotes.addLocals(_.zipObject(channel, localFfzEmotes));
         }
+
+        if (useBttv) {
+            let globalBttvEmotes = await getGlobalBTTV();
+            this._emotes.addGlobal(globalBttvEmotes);
+
+            this._customBadges = await getBTTVBadges();
+        }
     }
 
     get emotes(): SuperImageBank {
@@ -133,6 +142,10 @@ export class ImageService {
 
     get badges(): SuperImageBank {
         return this._badges;
+    }
+
+    getCustomBadge(username: string): Image | undefined {
+        return this._customBadges[username.toLowerCase()];
     }
 }
 
@@ -260,4 +273,63 @@ function getAllTwitchBadges(): Promise<SuperImageBank> {
             console.error(err);
             return new SuperBank<Image>();
         })
+}
+
+async function getGlobalBTTV(): Promise<ImageBank> {
+    console.log("Fetching global emotes from BTTV...");
+    const data = await fetch("https://api.betterttv.net/3/cached/emotes/global")
+        .then(r => r.json())
+        .then(data => {
+            let array = data as any[];
+            let bank: ImageBank = {};
+            for (let emote of array) {
+                let img: Image = {
+                    name: emote.code,
+                    clazz: ["emote", "global"],
+                    source: "bttv",
+                    scale: {
+                        1: `https://cdn.betterttv.net/emote/${emote.id}/1x.${emote.imageType}`,
+                        2: `https://cdn.betterttv.net/emote/${emote.id}/2x.${emote.imageType}`,
+                        4: `https://cdn.betterttv.net/emote/${emote.id}/3x.${emote.imageType}`
+                    }
+                };
+                bank[emote.code] = img;
+            }
+            return bank;
+        })
+        .catch(err => {
+            console.error(err);
+            return {};
+        });
+    console.log("Loaded %d global emotes from BTTV", Object.keys(data).length);
+    return data;
+}
+
+async function getBTTVBadges(): Promise<ImageBank> {
+    console.log("Fetching badges from BTTV...");
+    const data = await fetch("https://api.betterttv.net/3/cached/badges")
+        .then(r => r.json())
+        .then(data => {
+            let array = data as any[];
+            let bank: ImageBank = {};
+            for (let custom of array) {
+                let friend = custom.name as string;
+                let img: Image = {
+                    name: custom.badge.description,
+                    clazz: ["badge", "global"],
+                    source: "bttv",
+                    scale: {
+                        1: custom.badge.svg
+                    }
+                };
+                bank[friend.toLowerCase()] = img;
+            }
+            return bank;
+        })
+        .catch(err => {
+            console.error(err);
+            return {};
+        })
+    console.log("Loaded %d badges from BTTV", Object.keys(data).length);
+    return data;
 }

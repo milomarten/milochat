@@ -1,7 +1,7 @@
 import _ from 'lodash';
 import tmi from 'tmi.js';
 import {v4 as uuid} from 'uuid';
-import { Image, imageToHTML, SuperImageBank } from './Images';
+import Images, { Image, imageToHTML, SuperImageBank } from './Images';
 import { MilochatOptions } from './Options';
 import Pronouns, { Pronoun } from './Pronouns';
 
@@ -249,6 +249,11 @@ export abstract class AbstractTwitchMessage extends AbstractMessage {
             this.badges = finalBadges;
         } else {
             this.badges = [];
+        }
+
+        let customBadge = Images.getCustomBadge(this.name);
+        if (customBadge) {
+            this.badges.unshift(customBadge);
         }
     }
 
